@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+
+<RevitAddIns>
+
+	<AddIn Type="Application">
+
+		<Name>Revit AI Assitant</Name>
+
+		<Assembly>"C:\Users\angad\source\repos\RevitGpt\bin\x64\Debug\RevitGpt.dll"</Assembly>
+
+		<AddInId>91837505-dabc-4dc9-ac92-4cd005a832b3</AddInId>
+
+		<FullClassName>RevitGpt.App</FullClassName>
+
+		<VendorId>Khurana Brothers</VendorId>
+
+		<VendorDescription>kb@gmail.com</VendorDescription>
+
+	</AddIn>
+
+</RevitAddIns>
