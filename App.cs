@@ -11,7 +11,7 @@ namespace RevitGpt
     public class App : IExternalApplication
     {
         // Set this to true to enable document indexing on startup
-        private static readonly bool EnableDocumentIndexing = false;
+        private static readonly bool EnableDocumentIndexing = true;
 
         // Directory containing documents to index
         private static readonly string DocumentsDirectory = @"C:\Users\angad\OneDrive\Desktop\TestRevitDocs";
@@ -21,6 +21,7 @@ namespace RevitGpt
 
         public Result OnStartup(UIControlledApplication application)
         {
+            System.Diagnostics.Debug.WriteLine("Hello from Debug!");
             try
             {
                 // Create a Ribbon Panel

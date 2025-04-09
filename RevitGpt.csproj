@@ -79,11 +79,13 @@
     </Compile>
     <Compile Include="CodeExecutionHandler.cs" />
     <Compile Include="Command.cs" />
+    <Compile Include="DirectInteractionWithRevit.cs" />
     <Compile Include="DocumentChunker.cs" />
     <Compile Include="DocumentIndexManager.cs" />
     <Compile Include="EmbeddingService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="QdrantService.cs" />
+    <Compile Include="RevitTools.cs" />
   </ItemGroup>
   <ItemGroup>
     <Page Include="ChatWindow.xaml">

@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace RevitGpt
@@ -41,6 +42,16 @@ namespace RevitGpt
         private void ChatWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             // Clean up if needed
+        }
+
+        // Add this method for the Enter key press
+        private void UserInput_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            {
+                SendButton_Click(sender, e);
+                e.Handled = true;
+            }
         }
 
         private async void SendButton_Click(object sender, RoutedEventArgs e)
@@ -127,6 +138,67 @@ namespace RevitGpt
                 RemoveLastLine(); // Remove "thinking" text
                 ChatHistory.AppendText("Assistant: Sorry, an error occurred: " + ex.Message + "\n\n");
                 Console.WriteLine("Exception: " + ex.ToString());
+            }
+
+            // Scroll to bottom
+            ChatHistory.ScrollToEnd();
+        }
+
+        // Add this method to handle the Test button
+        private void TestButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Get the predefined code
+                string code = DirectInteractionWithRevit.GetTestCode();
+
+                // Show what we're doing
+                ChatHistory.AppendText("Running test function...\n");
+
+                // Compile the code
+                string errorMessage;
+                Type executorType;
+                Assembly assembly = ChatGPTService.CompileCode(code, out executorType, out errorMessage);
+
+                if (assembly != null)
+                {
+                    // Set up the execution handler with a callback
+                    _executionHandler.SetExecutionData(
+                        assembly,
+                        executorType,
+                        (success, error) => {
+                            Dispatcher.Invoke(() => {
+                                RemoveLastLine(); // Remove "Running test function..." text
+
+                                if (success)
+                                {
+                                    ChatHistory.AppendText("✓ Test executed successfully!\n\n");
+                                }
+                                else
+                                {
+                                    ChatHistory.AppendText($"❌ Test execution failed: {error}\n\n");
+                                }
+
+                                // Scroll to bottom
+                                ChatHistory.ScrollToEnd();
+                            });
+                        }
+                    );
+
+                    // Trigger the external event to execute on the main thread
+                    _externalEvent.Raise();
+                }
+                else
+                {
+                    RemoveLastLine(); // Remove "Running test function..." text
+                    ChatHistory.AppendText($"❌ Test compilation failed: {errorMessage}\n\n");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Display error message
+                ChatHistory.AppendText($"❌ Test error: {ex.Message}\n\n");
+                Console.WriteLine("Test Exception: " + ex.ToString());
             }
 
             // Scroll to bottom

@@ -29,7 +29,7 @@ namespace RevitGpt
 
         private static DocumentIndexManager IndexManager => _indexManager.Value;
 
-        public static async Task<(string response, string code)> GetResponse(List<ChatMessage> conversationHistory, UIApplication uiapp)
+        public static async Task<(string response, string code, ToolCall toolCall)> GetResponse(List<ChatMessage> conversationHistory, UIApplication uiapp)
         {
             // Build the messages list for the API call
             var messages = conversationHistory.Select(msg => new ChatMessage
@@ -60,13 +60,24 @@ namespace RevitGpt
                 }
             }
 
+            // Get all tool definitions 
+            var tools = RevitTools.GetToolDefinitions();
+            string toolsJson = JsonConvert.SerializeObject(tools, Formatting.Indented);
+
             string systemPrompt = @"
                 You are an assistant integrated into a Revit add-in. The user will ask you to perform actions in Revit.
-                Your task is to:
-                1. Respond with a friendly message explaining what you'll do
-                2. Generate C# code that uses the Revit API to perform the requested action. Ask for details/information if needed.
-
-                Always format your code inside ```csharp and ``` tags so it can be extracted.
+                
+                You have access to predefined functions that can perform common tasks in Revit. You should use these functions when possible instead of writing custom code.
+                
+                Here are the available functions:
+                " + toolsJson + @"
+                
+                When responding to the user:
+                1. If a predefined function can handle the request, respond with a friendly message explaining what you'll do, then identify the function and specify the parameters in this format:
+                   {""tool"": ""FunctionName"", ""parameters"": {""param1"": ""value1"", ""param2"": ""value2""}}
+                
+                2. If no predefined function can handle the request, respond with a friendly message and generate C# code that uses the Revit API.
+                   Always format your code inside ```csharp and ``` tags so it can be extracted.
                 
                 The code you write must:
                 - Be compatible with Revit 2024 API
@@ -143,19 +154,112 @@ namespace RevitGpt
                     var responseObject = JsonConvert.DeserializeObject<ChatGPTResponse>(responseString);
                     string result = responseObject.choices[0].message.content.Trim();
 
-                    // Extract code blocks
-                    string codeBlock = ExtractCodeBlock(result);
+                    // Check for tool call
+                    ToolCall toolCall = null;
+                    try
+                    {
+                        // Look for JSON patterns in the response that match our tool call format
+                        Regex toolRegex = new Regex(@"\{""tool"":\s*""([^""]+)"",\s*""parameters"":\s*(\{[^}]+\})\}");
+                        Match match = toolRegex.Match(result);
+
+                        if (match.Success)
+                        {
+                            string toolName = match.Groups[1].Value;
+                            string parametersJson = match.Groups[2].Value;
+
+                            toolCall = new ToolCall
+                            {
+                                Tool = toolName,
+                                Parameters = JsonConvert.DeserializeObject<Dictionary<string, object>>(parametersJson)
+                            };
+
+                            // Remove the tool call JSON from the response
+                            result = toolRegex.Replace(result, "");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error parsing tool call: {ex.Message}");
+                        // Continue with normal response if tool call parsing fails
+                    }
+
+                    // Extract code blocks if no tool call was found
+                    string codeBlock = string.Empty;
+                    if (toolCall == null)
+                    {
+                        codeBlock = ExtractCodeBlock(result);
+                    }
 
                     // Remove code blocks from the message for display
-                    string cleanedMessage = RemoveCodeBlocks(result);
+                    string cleanedMessage = RemoveCodeBlocks(result).Trim();
 
-                    return (cleanedMessage, codeBlock);
+                    return (cleanedMessage, codeBlock, toolCall);
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Exception occurred: {ex.Message}");
                     throw;
                 }
+            }
+        }
+
+        // Add this method to execute a tool call
+        public static string ExecuteTool(UIApplication uiapp, ToolCall toolCall)
+        {
+            if (toolCall == null)
+            {
+                return "Error: No tool call provided";
+            }
+
+            try
+            {
+                switch (toolCall.Tool)
+                {
+                    case "AddWindowToWall":
+                        // Extract parameters with type conversion
+                        string windowTypeName = toolCall.Parameters.ContainsKey("windowTypeName")
+                            ? toolCall.Parameters["windowTypeName"]?.ToString()
+                            : null;
+
+                        double windowWidth = 3.0;
+                        if (toolCall.Parameters.ContainsKey("windowWidth") && toolCall.Parameters["windowWidth"] != null)
+                        {
+                            double.TryParse(toolCall.Parameters["windowWidth"].ToString(), out windowWidth);
+                        }
+
+                        double windowHeight = 4.0;
+                        if (toolCall.Parameters.ContainsKey("windowHeight") && toolCall.Parameters["windowHeight"] != null)
+                        {
+                            double.TryParse(toolCall.Parameters["windowHeight"].ToString(), out windowHeight);
+                        }
+
+                        double sillHeight = 3.0;
+                        if (toolCall.Parameters.ContainsKey("sillHeight") && toolCall.Parameters["sillHeight"] != null)
+                        {
+                            double.TryParse(toolCall.Parameters["sillHeight"].ToString(), out sillHeight);
+                        }
+
+                        double distanceFromStart = 0.5;
+                        if (toolCall.Parameters.ContainsKey("distanceFromStart") && toolCall.Parameters["distanceFromStart"] != null)
+                        {
+                            double.TryParse(toolCall.Parameters["distanceFromStart"].ToString(), out distanceFromStart);
+                        }
+
+                        return RevitTools.AddWindowToWall(
+                            uiapp,
+                            windowTypeName,
+                            windowWidth,
+                            windowHeight,
+                            sillHeight,
+                            distanceFromStart);
+
+                    default:
+                        return $"Error: Unknown tool '{toolCall.Tool}'";
+                }
+            }
+            catch (Exception ex)
+            {
+                return $"Error executing tool {toolCall.Tool}: {ex.Message}";
             }
         }
 
@@ -190,7 +294,7 @@ namespace RevitGpt
             return tokenCount;
         }
 
-        // Add this to your ChatGPTService class
+        // Existing compilation method
         public static Assembly CompileCode(string code, out Type executorType, out string errorMessage)
         {
             errorMessage = null;
@@ -250,7 +354,7 @@ namespace RevitGpt
         }
     }
 
-    // Strongly-typed classes for deserialization
+    // Strongly-typed classes for deserialization (keeping existing ones)
     public class ChatGPTResponse
     {
         public List<Choice> choices { get; set; }
