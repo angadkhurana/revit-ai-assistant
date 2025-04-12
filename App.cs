@@ -2,41 +2,32 @@
 using System;
 using System.IO;
 using System.Windows.Media.Imaging;
-using System.Threading.Tasks;
-using System.Configuration;
-using RevitGpt;
 
 namespace RevitGpt
 {
     public class App : IExternalApplication
     {
-        // Set this to true to enable document indexing on startup
-        private static readonly bool EnableDocumentIndexing = false;
-
-        // Directory containing documents to index
-        private static readonly string DocumentsDirectory = @"C:\Users\angad\OneDrive\Desktop\TestRevitDocs";
-
-        // API Key - consider moving this to a config file
-        private static readonly string ApiKey = "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";
-
         public Result OnStartup(UIControlledApplication application)
         {
             try
             {
                 // Create a Ribbon Panel
-                RibbonPanel ribbonPanel = application.CreateRibbonPanel("Little Helper");
+                RibbonPanel ribbonPanel = application.CreateRibbonPanel("AI Assistant");
 
-                // Create a Push Button
+                // Create the server button
                 string thisAssemblyPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                PushButtonData buttonData = new PushButtonData(
-                    "RevitGptApp",
-                    "RevitGpt",
+
+                // Server Button
+                PushButtonData serverButtonData = new PushButtonData(
+                    "RevitServerApp",
+                    "Start Server",
                     thisAssemblyPath,
-                    "RevitGpt.Command");
+                    "RevitGpt.ServerCommand");
 
-                PushButton pushButton = ribbonPanel.AddItem(buttonData) as PushButton;
+                PushButton serverButton = ribbonPanel.AddItem(serverButtonData) as PushButton;
+                serverButton.ToolTip = "Start the HTTP server to enable Python communication";
 
-                // Add an icon
+                // Add an icon if available
                 string directoryPath = Path.GetDirectoryName(thisAssemblyPath);
                 string imagePath = Path.Combine(directoryPath, "Images", "CuteRobo_32x32.png");
 
@@ -44,26 +35,15 @@ namespace RevitGpt
                 {
                     using (FileStream stream = new FileStream(imagePath, FileMode.Open, FileAccess.Read))
                     {
-                        BitmapImage largeImage = new BitmapImage();
-                        largeImage.BeginInit();
-                        largeImage.StreamSource = stream;
-                        largeImage.CacheOption = BitmapCacheOption.OnLoad;
-                        largeImage.EndInit();
+                        BitmapImage image = new BitmapImage();
+                        image.BeginInit();
+                        image.StreamSource = stream;
+                        image.CacheOption = BitmapCacheOption.OnLoad;
+                        image.EndInit();
 
                         // Assign the image to the button
-                        pushButton.LargeImage = largeImage;
-                        pushButton.Image = largeImage;
+                        serverButton.LargeImage = image;
                     }
-                }
-                else
-                {
-                    TaskDialog.Show("Warning", $"Image file not found at {imagePath}");
-                }
-
-                // If document indexing is enabled, start the process
-                if (EnableDocumentIndexing)
-                {
-                    StartDocumentIndexing();
                 }
 
                 return Result.Succeeded;
@@ -75,55 +55,9 @@ namespace RevitGpt
             }
         }
 
-        private void StartDocumentIndexing()
-        {
-            // Create a directory if it doesn't exist
-            if (!Directory.Exists(DocumentsDirectory))
-            {
-                Directory.CreateDirectory(DocumentsDirectory);
-            }
-
-            // Start the indexing process asynchronously
-            Task.Run(async () =>
-            {
-                try
-                {
-                    // Create a status callback implementation
-                    var statusCallback = new RevitStatusCallback();
-
-                    // Create and run the document index manager
-                    var indexManager = new DocumentIndexManager(
-                        ApiKey,
-                        DocumentsDirectory);
-
-                    await indexManager.IndexDocumentsAsync(statusCallback);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error during document indexing: {ex.Message}");
-                }
-            });
-        }
-
         public Result OnShutdown(UIControlledApplication application)
         {
-            // Cleanup
             return Result.Succeeded;
-        }
-
-        /// <summary>
-        /// Implementation of IStatusCallback for Revit
-        /// </summary>
-        private class RevitStatusCallback : IStatusCallback
-        {
-            public void UpdateStatus(string status)
-            {
-                // Log to console for debugging
-                Console.WriteLine(status);
-
-                // For a real implementation, you might want to update a status bar
-                // or show a progress dialog in Revit
-            }
         }
     }
 }
