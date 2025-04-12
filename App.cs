@@ -29,22 +29,6 @@ namespace RevitGpt
 
                 // Add an icon if available
                 string directoryPath = Path.GetDirectoryName(thisAssemblyPath);
-                string imagePath = Path.Combine(directoryPath, "Images", "CuteRobo_32x32.png");
-
-                if (File.Exists(imagePath))
-                {
-                    using (FileStream stream = new FileStream(imagePath, FileMode.Open, FileAccess.Read))
-                    {
-                        BitmapImage image = new BitmapImage();
-                        image.BeginInit();
-                        image.StreamSource = stream;
-                        image.CacheOption = BitmapCacheOption.OnLoad;
-                        image.EndInit();
-
-                        // Assign the image to the button
-                        serverButton.LargeImage = image;
-                    }
-                }
 
                 return Result.Succeeded;
             }
