@@ -125,42 +125,8 @@ namespace RevitGpt
 
             try
             {
-                // Wrap the code in a class with the Execute method
-                string wrappedCode = $@"
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using Autodesk.Revit.DB;
-using Autodesk.Revit.UI;
-
-namespace RevitGpt.Dynamic
-{{
-    public static class DynamicExecutor
-    {{
-        public static void Execute(UIApplication uiapp, UIDocument uidoc, Document doc)
-        {{
-            try
-            {{
-                // Create an instance of the class that contains the CreateWall method
-                var instance = new WallCreator();
-                
-                // Call the CreateWall method
-                instance.CreateWall(doc, uiapp);
-            }}
-            catch (Exception ex)
-            {{
-                TaskDialog.Show(""Error"", ex.Message);
-            }}
-        }}
-
-        public class WallCreator
-        {{
-            {code}
-        }}
-    }}
-}}";
-
-                // Compile the code
+                // Compile the code received from Python directly
+                // No additional wrapping since it's already fully formed
                 CompilerParameters compilerParams = new CompilerParameters
                 {
                     GenerateInMemory = true
@@ -175,7 +141,7 @@ namespace RevitGpt.Dynamic
 
                 // Create the C# compiler
                 CSharpCodeProvider codeProvider = new CSharpCodeProvider();
-                CompilerResults results = codeProvider.CompileAssemblyFromSource(compilerParams, wrappedCode);
+                CompilerResults results = codeProvider.CompileAssemblyFromSource(compilerParams, code);
 
                 if (results.Errors.HasErrors)
                 {

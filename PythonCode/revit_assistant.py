@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 # Define the tool to create a wall in Revit using the @tool decorator
 @tool
 def create_wall(start_point: str = "0,0,0", end_point: str = "10,0,0", height: float = 10.0, width: float = 0.5) -> str:
-    """Creates a wall in Revit.
+    """Use this only to create a wall in Revit.
     
     Args:
         start_point: Start point of the wall in format "x,y,z"
@@ -16,59 +16,86 @@ def create_wall(start_point: str = "0,0,0", end_point: str = "10,0,0", height: f
         height: Height of the wall in feet
         width: Width/thickness of the wall in feet
     """
-    # Generate C# code for creating a wall
+    # Generate complete C# code including the wrapper class and Execute method
     c_sharp_code = f"""
-    using Autodesk.Revit.DB;
-    using Autodesk.Revit.UI;
-    
-    public void CreateWall(Document doc, UIApplication uiapp)
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
+
+namespace RevitGpt.Dynamic
+{{
+    public static class DynamicExecutor
     {{
-        // Start a transaction
-        using (Transaction tx = new Transaction(doc, "Create Wall"))
+        public static void Execute(UIApplication uiapp, UIDocument uidoc, Document doc)
         {{
-            tx.Start();
-            
-            // Parse coordinates
-            string[] startCoords = "{start_point}".Split(',');
-            string[] endCoords = "{end_point}".Split(',');
-            
-            // Create points
-            XYZ startPoint = new XYZ(
-                double.Parse(startCoords[0]), 
-                double.Parse(startCoords[1]), 
-                double.Parse(startCoords[2])
-            );
-            
-            XYZ endPoint = new XYZ(
-                double.Parse(endCoords[0]), 
-                double.Parse(endCoords[1]), 
-                double.Parse(endCoords[2])
-            );
-            
-            // Get the wall type
-            FilteredElementCollector collector = new FilteredElementCollector(doc);
-            WallType wallType = collector
-                .OfClass(typeof(WallType))
-                .FirstElement() as WallType;
-            
-            // Create wall
-            Wall wall = Wall.Create(
-                doc, 
-                Line.CreateBound(startPoint, endPoint), 
-                wallType.Id, 
-                Level.Create(doc, 0.0).Id, 
-                {height}, 
-                {width}, 
-                false, 
-                false
-            );
-            
-            tx.Commit();
+            try
+            {{
+                // Create an instance of the class that contains the CreateWall method
+                var instance = new WallCreator();
+                
+                // Call the CreateWall method
+                instance.CreateWall(doc, uiapp);
+            }}
+            catch (Exception ex)
+            {{
+                TaskDialog.Show("Error", ex.Message);
+            }}
         }}
-        
-        return "Wall created successfully";
+
+        public class WallCreator
+        {{
+            public void CreateWall(Document doc, UIApplication uiapp)
+            {{
+                // Start a transaction
+                using (Transaction tx = new Transaction(doc, "Create Wall"))
+                {{
+                    tx.Start();
+                    
+                    // Parse coordinates
+                    string[] startCoords = "{start_point}".Split(',');
+                    string[] endCoords = "{end_point}".Split(',');
+                    
+                    // Create points
+                    XYZ startPoint = new XYZ(
+                        double.Parse(startCoords[0]), 
+                        double.Parse(startCoords[1]), 
+                        double.Parse(startCoords[2])
+                    );
+                    
+                    XYZ endPoint = new XYZ(
+                        double.Parse(endCoords[0]), 
+                        double.Parse(endCoords[1]), 
+                        double.Parse(endCoords[2])
+                    );
+                    
+                    // Get the wall type
+                    FilteredElementCollector collector = new FilteredElementCollector(doc);
+                    WallType wallType = collector
+                        .OfClass(typeof(WallType))
+                        .FirstElement() as WallType;
+                    
+                    // Create wall
+                    Wall wall = Wall.Create(
+                        doc, 
+                        Line.CreateBound(startPoint, endPoint), 
+                        wallType.Id, 
+                        Level.Create(doc, 0.0).Id, 
+                        {height}, 
+                        {width}, 
+                        false, 
+                        false
+                    );
+                    
+                    tx.Commit();
+                }}
+                
+                return;
+            }}
+        }}
     }}
-    """
+}}"""
     
     try:
         # Send C# code to the C# server
@@ -102,8 +129,11 @@ def main():
         try:
             # Define the system message
             system_message = """You are a Revit assistant that helps users create and modify elements 
-            in Revit. For this proof of concept, no matter what the user asks for, you should use the 
-            create_wall tool to create a wall in Revit with default parameters and say "I am albert einstein"."""
+            in Revit. I am giving you some tools to execute tasks in revit. each tool can do a specific task.
+            try to use these tools to answer the user's question. It is possible that the tools are not useful. 
+            In that case, no need to forcefully use these tools. Instead
+            say "I dont know my guy" and thats it.
+            """
             
             # Invoke the LLM with function calling
             response = llm_with_tools.invoke(
@@ -115,16 +145,15 @@ def main():
             
             # Process the tool calls from the response
             if hasattr(response, "tool_calls") and response.tool_calls:
-                # In a real implementation, we would parse the arguments from the tool call
-                # For now, we'll just call the function with default parameters
-                result = create_wall.invoke({})
-                explanation = f"I've created a wall for you. {result}"
+                tool_call = response.tool_calls[0]
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
+                print(f"Revit Assistant: Using tool {tool_name} with arguments {tool_args}")
+                if tool_name == "create_wall":
+                    tool_result = create_wall(**tool_args)
+                    print(tool_result)
             else:
-                # Fallback in case the model doesn't make a tool call
-                result = create_wall()
-                explanation = f"I've created a wall for you. {result}"
-                
-            print(f"Revit Assistant: {explanation}")
+                print("No Tool Call")
             
         except Exception as e:
             print(f"Revit Assistant: I encountered an error - {str(e)}")
