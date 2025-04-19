@@ -6,15 +6,11 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.DB;
-using System.Reflection;
-using System.CodeDom.Compiler;
-using Microsoft.CSharp;
-using System.Linq;
 
 namespace RevitGpt
 {
     /// <summary>
-    /// Simple HTTP server to receive and execute C# code from Python
+    /// Simple HTTP server to receive function calls from Python and execute them in Revit
     /// </summary>
     public class RevitHttpServer
     {
@@ -28,7 +24,7 @@ namespace RevitGpt
         {
             _uiapp = uiapp;
 
-            // Create the external event handler for executing code
+            // Create the external event handler for executing functions
             _executionHandler = new CodeExecutionHandler();
             _externalEvent = ExternalEvent.Create(_executionHandler);
         }
@@ -97,12 +93,13 @@ namespace RevitGpt
                     requestBody = await reader.ReadToEndAsync();
                 }
 
-                // Parse the request body to get the C# code
+                // Parse the request body to get the function name and arguments
                 dynamic payload = JsonConvert.DeserializeObject(requestBody);
-                string code = payload.code;
+                string functionName = Convert.ToString(payload.function);
+                dynamic arguments = payload.arguments;
 
-                // Execute the code in Revit
-                string result = await ExecuteCodeInRevitAsync(code);
+                // Execute the function in Revit
+                string result = await ExecuteFunctionInRevitAsync(functionName, arguments);
 
                 // Send the response
                 byte[] buffer = Encoding.UTF8.GetBytes(result);
@@ -119,55 +116,29 @@ namespace RevitGpt
             }
         }
 
-        private async Task<string> ExecuteCodeInRevitAsync(string code)
+        private async Task<string> ExecuteFunctionInRevitAsync(string functionName, dynamic arguments)
         {
             var taskCompletionSource = new TaskCompletionSource<string>();
 
             try
             {
-                // Compile the code received from Python directly
-                // No additional wrapping since it's already fully formed
-                CompilerParameters compilerParams = new CompilerParameters
-                {
-                    GenerateInMemory = true
+                // Create the callback delegate explicitly 
+                Action<bool, string> callback = (success, result) => {
+                    if (success)
+                    {
+                        taskCompletionSource.SetResult(result);
+                    }
+                    else
+                    {
+                        taskCompletionSource.SetResult($"Execution failed: {result}");
+                    }
                 };
 
-                // Add necessary references
-                compilerParams.ReferencedAssemblies.Add("System.dll");
-                compilerParams.ReferencedAssemblies.Add("System.Core.dll");
-                compilerParams.ReferencedAssemblies.Add("RevitAPI.dll");
-                compilerParams.ReferencedAssemblies.Add("RevitAPIUI.dll");
-                compilerParams.ReferencedAssemblies.Add(Assembly.GetExecutingAssembly().Location);
-
-                // Create the C# compiler
-                CSharpCodeProvider codeProvider = new CSharpCodeProvider();
-                CompilerResults results = codeProvider.CompileAssemblyFromSource(compilerParams, code);
-
-                if (results.Errors.HasErrors)
-                {
-                    string errorMsg = string.Join("\n", results.Errors.Cast<CompilerError>().Select(e => e.ErrorText));
-                    taskCompletionSource.SetResult($"Compilation error: {errorMsg}");
-                    return await taskCompletionSource.Task;
-                }
-
-                // Get the compiled assembly and type
-                Assembly assembly = results.CompiledAssembly;
-                Type executorType = assembly.GetType("RevitGpt.Dynamic.DynamicExecutor");
-
-                // Set up the execution handler
+                // Set up the execution handler with the function name and arguments
                 _executionHandler.SetExecutionData(
-                    assembly,
-                    executorType,
-                    (success, error) => {
-                        if (success)
-                        {
-                            taskCompletionSource.SetResult("Wall created successfully in Revit!");
-                        }
-                        else
-                        {
-                            taskCompletionSource.SetResult($"Execution failed: {error}");
-                        }
-                    }
+                    functionName,
+                    arguments,
+                    callback
                 );
 
                 // Trigger the external event to execute on the main thread
