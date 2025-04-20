@@ -1,49 +1,51 @@
 ﻿using System;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.DB;
-using System.Reflection;
 
 namespace RevitGpt
 {
     public class CodeExecutionHandler : IExternalEventHandler
     {
-        private string _compiledCode;
-        private Assembly _assembly;
-        private Type _executorType;
+        private string _functionName;
+        private dynamic _arguments;
         private Action<bool, string> _completionCallback;
 
         public void Execute(UIApplication app)
         {
             bool success = false;
-            string errorMessage = "";
+            string result = "";
 
             try
             {
-                // Find and invoke the Execute method
-                MethodInfo executeMethod = _executorType.GetMethod("Execute");
-
-                if (executeMethod != null)
+                // Dispatch to the appropriate function based on the function name
+                switch (_functionName)
                 {
-                    var uiapp = app;
-                    var uidoc = uiapp.ActiveUIDocument;
-                    var doc = uidoc.Document;
+                    case "create_wall":
+                        // Safely extract values from dynamic object
+                        string startPoint = Convert.ToString(_arguments["start_point"]);
+                        string endPoint = Convert.ToString(_arguments["end_point"]);
+                        double height = Convert.ToDouble(_arguments["height"]);
+                        double width = Convert.ToDouble(_arguments["width"]);
 
-                    executeMethod.Invoke(null, new object[] { uiapp, uidoc, doc });
-                    success = true;
-                }
-                else
-                {
-                    errorMessage = "Could not find the Execute method in the generated code.";
+                        result = RevitFunctions.CreateWall(app, startPoint, endPoint, height, width);
+                        success = true;
+                        break;
+
+                    // Add more function cases here
+
+                    default:
+                        result = $"Unknown function: {_functionName}";
+                        break;
                 }
             }
             catch (Exception ex)
             {
-                errorMessage = $"Error executing code: {ex.Message}";
+                result = $"Error executing function: {ex.Message}";
             }
             finally
             {
                 // Call the completion callback to notify the UI
-                _completionCallback?.Invoke(success, errorMessage);
+                _completionCallback?.Invoke(success, result);
             }
         }
 
@@ -52,10 +54,10 @@ namespace RevitGpt
             return "CodeExecutionHandler";
         }
 
-        public void SetExecutionData(Assembly assembly, Type executorType, Action<bool, string> callback)
+        public void SetExecutionData(string functionName, dynamic arguments, Action<bool, string> callback)
         {
-            _assembly = assembly;
-            _executorType = executorType;
+            _functionName = functionName;
+            _arguments = arguments;
             _completionCallback = callback;
         }
     }
