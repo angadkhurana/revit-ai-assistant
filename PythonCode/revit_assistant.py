@@ -1,8 +1,7 @@
 import os
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-import requests
-from wall_functions import create_wall
+from revit_element_tools.wall_tools import create_wall
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,6 +13,10 @@ tools = [create_wall]
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 llm_with_tools = llm.bind_tools(tools)
 
+
+TOOL_TO_FUNCTIONS_DICT = {
+    "create_wall": create_wall
+}
 # Main function
 def main():
     print("Revit Assistant: Hello! I can help you create elements in Revit. What would you like to do?")
@@ -58,21 +61,14 @@ def main():
                 tool_args = tool_call["args"]
                 print(f"Revit Assistant: Using tool {tool_name} with arguments {tool_args}")
                 
-                # Send the function call to the C# backend
-                try:
-                    backend_response = requests.post(
-                        "http://localhost:5000/execute", 
-                        json={
-                            "function": tool_name,
-                            "arguments": tool_args
-                        },
-                        timeout=10
-                    )
-                    print(backend_response.text)
-                except requests.RequestException as e:
-                    print(f"Error communicating with Revit server: {str(e)}")
+                # Call the tool function
+                tool_function = TOOL_TO_FUNCTIONS_DICT[tool_name]
+                response = tool_function.invoke(tool_args)
+                # The HTTP request to the C# backend is now handled inside the tool function
+                # so we just need to print the response from the tool
+                print(f"Revit Assistant: {response}")
             else:
-                print("Revit Assistant: " + response.content)
+                print("Revit Assistant: " + response)
             
         except Exception as e:
             print(f"Revit Assistant: I encountered an error - {str(e)}")

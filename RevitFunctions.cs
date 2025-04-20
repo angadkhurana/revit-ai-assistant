@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.DB;
+using Newtonsoft.Json;
 
 namespace RevitGpt
 {
@@ -10,7 +12,7 @@ namespace RevitGpt
     public static class RevitFunctions
     {
         /// <summary>
-        /// Creates a wall in Revit with the specified parameters
+        /// Creates a wall in Revit with the specified parameters and returns element IDs
         /// </summary>
         public static string CreateWall(UIApplication uiapp, string startPoint, string endPoint, double height, double width)
         {
@@ -18,6 +20,7 @@ namespace RevitGpt
             {
                 var uidoc = uiapp.ActiveUIDocument;
                 var doc = uidoc.Document;
+                List<ElementId> affectedElements = new List<ElementId>();
 
                 // Start a transaction
                 using (Transaction tx = new Transaction(doc, "Create Wall"))
@@ -59,15 +62,42 @@ namespace RevitGpt
                         false
                     );
 
+                    // Add element ID to the list
+                    affectedElements.Add(wall.Id);
+
                     tx.Commit();
                 }
 
-                return "Wall created successfully in Revit!";
+                // Create a response object with message and element IDs
+                var response = new
+                {
+                    Message = "Wall created successfully in Revit!",
+                    ElementIds = ConvertElementIdsToStrings(affectedElements)
+                };
+
+                return JsonConvert.SerializeObject(response);
             }
             catch (Exception ex)
             {
-                return $"Error creating wall: {ex.Message}";
+                var errorResponse = new
+                {
+                    Message = $"Error creating wall: {ex.Message}",
+                    ElementIds = new List<string>()
+                };
+
+                return JsonConvert.SerializeObject(errorResponse);
             }
+        }
+
+        // Helper method to convert ElementIds to string representation
+        private static List<string> ConvertElementIdsToStrings(List<ElementId> elementIds)
+        {
+            List<string> idStrings = new List<string>();
+            foreach (ElementId id in elementIds)
+            {
+                idStrings.Add(id.IntegerValue.ToString());
+            }
+            return idStrings;
         }
 
         // Add more Revit functions here as needed
