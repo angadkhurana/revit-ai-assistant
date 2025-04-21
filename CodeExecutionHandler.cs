@@ -31,6 +31,18 @@ namespace RevitGpt
                         success = true;
                         break;
 
+                    case "add_window_to_wall":
+                        // Extract parameters for window
+                        string wallId = Convert.ToString(_arguments["wall_id"]);
+                        double windowWidth = Convert.ToDouble(_arguments["window_width"]);
+                        double windowHeight = Convert.ToDouble(_arguments["window_height"]);
+                        double distanceFromStart = Convert.ToDouble(_arguments["distance_from_start"]);
+                        double sillHeight = Convert.ToDouble(_arguments["sill_height"]);
+
+                        result = RevitFunctions.AddWindowToWall(app, wallId, windowWidth, windowHeight, distanceFromStart, sillHeight);
+                        success = true;
+                        break;
+
                     // Add more function cases here
 
                     default:

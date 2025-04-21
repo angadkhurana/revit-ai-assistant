@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from revit_element_tools.wall_tools import create_wall
@@ -29,12 +30,13 @@ def main():
 Instructions:
 - For any user request, first analyze if it requires multiple steps or just a single operation.
 - For multi-step tasks, FIRST outline the complete plan before executing any steps.
-- Then execute one tool at a time, waiting for results before proceeding to the next step.
+- Then execute ONE tool at a time, waiting for results before proceeding to the next step.
 
 1. When handling multi-step tasks:
    - Begin with: "Here's my plan:" followed by a numbered list of steps
    - Then say: "Let's start with step 1:" and proceed with the first tool call
-   - After each step, acknowledge the result and move to the next step
+   - After each step completes, say "Moving to step X:" and proceed with the next tool call
+   - IMPORTANT: Only call ONE tool at a time, never multiple tools in one response
    - Use element IDs from previous operations in subsequent steps
 
 2. When using tools:
@@ -60,19 +62,26 @@ Instructions:
 """
 
     messages = [{"role": "system", "content": system_message}]
+    in_progress_plan = False
     
     while True:
-        user_input = input("You: ")
-        if user_input.lower() in ["exit", "quit", "bye"]:
-            print("Revit Assistant: Goodbye!")
-            break
-        
-        messages.append({"role": "user", "content": user_input})
+        if not in_progress_plan:
+            user_input = input("You: ")
+            if user_input.lower() in ["exit", "quit", "bye"]:
+                print("Revit Assistant: Goodbye!")
+                break
+            messages.append({"role": "user", "content": user_input})
+        else:
+            # Auto-continue with the next step without user input
+            print("Continuing with the next step automatically...")
         
         try:
             response = llm_with_tools.invoke(messages)
             
             if hasattr(response, "tool_calls") and response.tool_calls:
+                # We're in a multi-step process
+                in_progress_plan = True
+                
                 # Append assistant message with tool calls
                 assistant_message = {
                     "role": "assistant",
@@ -94,38 +103,45 @@ Instructions:
                 if response.content:
                     print(f"Revit Assistant: {response.content}")
                 
-                # Process each tool call
-                for tool_call in response.tool_calls:
-                    tool_name = tool_call["name"]
-                    tool_args = tool_call["args"]
-                    tool_call_id = tool_call["id"]
-                    
-                    # Call the tool function
-                    tool_function = TOOL_TO_FUNCTIONS_DICT.get(tool_name)
-                    if not tool_function:
-                        tool_response = f"Error: Tool {tool_name} not found."
-                    else:
-                        try:
-                            tool_response = tool_function.invoke(tool_args)
-                        except Exception as e:
-                            tool_response = f"Error invoking tool {tool_name}: {str(e)}"
-                    
-                    print(f"Revit Assistant: {tool_response}")
-                    
-                    # Append tool message to history
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "content": str(tool_response)
-                    })
+                # Process only the first tool call
+                tool_call = response.tool_calls[0]
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
+                tool_call_id = tool_call["id"]
+                
+                # Call the tool function
+                tool_function = TOOL_TO_FUNCTIONS_DICT.get(tool_name)
+                if not tool_function:
+                    tool_response = f"Error: Tool {tool_name} not found."
+                else:
+                    try:
+                        tool_response = tool_function.invoke(tool_args)
+                    except Exception as e:
+                        tool_response = f"Error invoking tool {tool_name}: {str(e)}"
+                
+                print(f"Revit Assistant: {tool_response}")
+                
+                # Append tool message to history
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": str(tool_response)
+                })
+                
+                # Check if plan is complete
+                if "completed" in response.content.lower() or "complete" in response.content.lower() or "finished" in response.content.lower() or "final step" in response.content.lower():
+                    in_progress_plan = False
             else:
+                # Text-only response, not using tools
                 print(f"Revit Assistant: {response.content}")
                 messages.append({"role": "assistant", "content": response.content})
+                in_progress_plan = False
             
         except Exception as e:
             error_message = f"I encountered an error - {str(e)}"
             print(f"Revit Assistant: {error_message}")
             messages.append({"role": "assistant", "content": error_message})
+            in_progress_plan = False
 
 if __name__ == "__main__":
     main()
