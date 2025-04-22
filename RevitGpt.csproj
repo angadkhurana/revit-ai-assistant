@@ -74,8 +74,12 @@
   <ItemGroup>
     <Compile Include="App.cs" />
     <Compile Include="CodeExecutionHandler.cs" />
+    <Compile Include="Functions\CommonFunctions.cs" />
+    <Compile Include="Functions\SelectionFunctions.cs" />
+    <Compile Include="Functions\WallFunctions.cs" />
+    <Compile Include="Functions\WindowFunctions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="RevitFunctions.cs" />
+    <Compile Include="RevitFunctionRegistry.cs" />
     <Compile Include="RevitHttpServer.cs" />
     <Compile Include="ServerCommand.cs" />
   </ItemGroup>
