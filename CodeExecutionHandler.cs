@@ -43,6 +43,27 @@ namespace RevitGpt
                         success = true;
                         break;
 
+                    case "get_wall_types":
+                        // No arguments needed for this function
+                        result = RevitFunctions.GetWallTypes(app);
+                        success = true;
+                        break;
+
+                    case "change_wall_type":
+                        // Extract parameters for changing wall type
+                        string wallIds = Convert.ToString(_arguments["wall_ids"]);
+                        string typeName = Convert.ToString(_arguments["type_name"]);
+
+                        result = RevitFunctions.ChangeWallType(app, wallIds, typeName);
+                        success = true;
+                        break;
+
+                    case "get_selected_elements":
+                        // No arguments needed for this function
+                        result = RevitFunctions.GetSelectedElements(app);
+                        success = true;
+                        break;
+
                     // Add more function cases here
 
                     default:

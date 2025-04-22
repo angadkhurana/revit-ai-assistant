@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.DB;
 using Newtonsoft.Json;
@@ -203,6 +204,142 @@ namespace RevitGpt
             }
         }
 
+        /// <summary>
+        /// Gets all available wall types in the Revit model
+        /// </summary>
+        public static string GetWallTypes(UIApplication uiapp)
+        {
+            try
+            {
+                var doc = uiapp.ActiveUIDocument.Document;
+                List<string> wallTypeNames = new List<string>();
+                Dictionary<string, string> wallTypeMap = new Dictionary<string, string>();
+
+                // Collect all wall types in the document
+                FilteredElementCollector collector = new FilteredElementCollector(doc);
+                ICollection<Element> wallTypes = collector
+                    .OfClass(typeof(WallType))
+                    .ToElements();
+
+                // Extract names and IDs
+                foreach (WallType wallType in wallTypes)
+                {
+                    wallTypeNames.Add(wallType.Name);
+                    wallTypeMap.Add(wallType.Id.IntegerValue.ToString(), wallType.Name);
+                }
+
+                // Create a response object with message and wall type information
+                var response = new
+                {
+                    Message = $"Found {wallTypeNames.Count} wall types:\n- " + string.Join("\n- ", wallTypeNames),
+                    WallTypes = wallTypeMap
+                };
+
+                return JsonConvert.SerializeObject(response);
+            }
+            catch (Exception ex)
+            {
+                var errorResponse = new
+                {
+                    Message = $"Error getting wall types: {ex.Message}",
+                    WallTypes = new Dictionary<string, string>()
+                };
+
+                return JsonConvert.SerializeObject(errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Changes the type of selected walls using fuzzy matching for the wall type name
+        /// </summary>
+        public static string ChangeWallType(UIApplication uiapp, string wallIds, string typeName)
+        {
+            try
+            {
+                var uidoc = uiapp.ActiveUIDocument;
+                var doc = uidoc.Document;
+                List<ElementId> affectedElements = new List<ElementId>();
+
+                // Parse wall IDs
+                List<ElementId> wallElementIds = new List<ElementId>();
+                foreach (string id in wallIds.Split(','))
+                {
+                    if (!string.IsNullOrWhiteSpace(id))
+                    {
+                        wallElementIds.Add(new ElementId(int.Parse(id.Trim())));
+                    }
+                }
+
+                if (wallElementIds.Count == 0)
+                {
+                    throw new Exception("No valid wall IDs provided");
+                }
+
+                // Find the target wall type using fuzzy matching
+                FilteredElementCollector collector = new FilteredElementCollector(doc);
+                ICollection<Element> wallTypes = collector
+                    .OfClass(typeof(WallType))
+                    .ToElements();
+
+                WallType targetWallType = null;
+                int closestMatch = int.MaxValue;
+
+                foreach (WallType wallType in wallTypes)
+                {
+                    int distance = LevenshteinDistance(wallType.Name.ToLower(), typeName.ToLower());
+                    if (distance < closestMatch)
+                    {
+                        closestMatch = distance;
+                        targetWallType = wallType;
+                    }
+                }
+
+                if (targetWallType == null)
+                {
+                    throw new Exception("No wall types found in the project");
+                }
+
+                // Start a transaction
+                using (Transaction tx = new Transaction(doc, "Change Wall Type"))
+                {
+                    tx.Start();
+
+                    foreach (ElementId wallId in wallElementIds)
+                    {
+                        Wall wall = doc.GetElement(wallId) as Wall;
+
+                        if (wall != null)
+                        {
+                            // Change the wall type
+                            wall.WallType = targetWallType;
+                            affectedElements.Add(wallId);
+                        }
+                    }
+
+                    tx.Commit();
+                }
+
+                // Create a response object with message and element IDs
+                var response = new
+                {
+                    Message = $"Changed {affectedElements.Count} walls to type: {targetWallType.Name} (matched from '{typeName}')",
+                    ElementIds = ConvertElementIdsToStrings(affectedElements)
+                };
+
+                return JsonConvert.SerializeObject(response);
+            }
+            catch (Exception ex)
+            {
+                var errorResponse = new
+                {
+                    Message = $"Error changing wall type: {ex.Message}",
+                    ElementIds = new List<string>()
+                };
+
+                return JsonConvert.SerializeObject(errorResponse);
+            }
+        }
+
         // Helper method to convert ElementIds to string representation
         private static List<string> ConvertElementIdsToStrings(List<ElementId> elementIds)
         {
@@ -212,6 +349,107 @@ namespace RevitGpt
                 idStrings.Add(id.IntegerValue.ToString());
             }
             return idStrings;
+        }
+
+        /// <summary>
+        /// Calculates Levenshtein distance between two strings for fuzzy matching
+        /// </summary>
+        private static int LevenshteinDistance(string s, string t)
+        {
+            int n = s.Length;
+            int m = t.Length;
+            int[,] d = new int[n + 1, m + 1];
+
+            if (n == 0)
+                return m;
+
+            if (m == 0)
+                return n;
+
+            for (int i = 0; i <= n; i++)
+                d[i, 0] = i;
+
+            for (int j = 0; j <= m; j++)
+                d[0, j] = j;
+
+            for (int j = 1; j <= m; j++)
+            {
+                for (int i = 1; i <= n; i++)
+                {
+                    int cost = (s[i - 1] == t[j - 1]) ? 0 : 1;
+
+                    d[i, j] = Math.Min(
+                        Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                        d[i - 1, j - 1] + cost);
+                }
+            }
+
+            return d[n, m];
+        }
+
+        /// <summary>
+        /// Gets information about elements currently selected in the Revit UI
+        /// </summary>
+        public static string GetSelectedElements(UIApplication uiapp)
+        {
+            try
+            {
+                var uidoc = uiapp.ActiveUIDocument;
+                var doc = uidoc.Document;
+
+                // Get the currently selected element IDs
+                ICollection<ElementId> selectedIds = uidoc.Selection.GetElementIds();
+
+                Dictionary<string, string> elementInfo = new Dictionary<string, string>();
+                List<string> elementDescriptions = new List<string>();
+
+                if (selectedIds.Count == 0)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        Message = "No elements are currently selected in Revit.",
+                        ElementInfo = elementInfo
+                    });
+                }
+
+                // Process each selected element
+                foreach (ElementId id in selectedIds)
+                {
+                    Element elem = doc.GetElement(id);
+                    if (elem != null)
+                    {
+                        string elemType = elem.GetType().Name;
+
+                        // Get category name if available
+                        string category = (elem.Category != null) ? elem.Category.Name : "No Category";
+
+                        // Add to dictionary
+                        elementInfo.Add(id.IntegerValue.ToString(), $"{elemType} ({category})");
+
+                        // Add to descriptions list
+                        elementDescriptions.Add($"ID: {id.IntegerValue}, Type: {elemType}, Category: {category}");
+                    }
+                }
+
+                // Create a response object with message and element information
+                var response = new
+                {
+                    Message = $"Found {selectedIds.Count} selected elements:\n- " + string.Join("\n- ", elementDescriptions),
+                    ElementInfo = elementInfo
+                };
+
+                return JsonConvert.SerializeObject(response);
+            }
+            catch (Exception ex)
+            {
+                var errorResponse = new
+                {
+                    Message = $"Error getting selected elements: {ex.Message}",
+                    ElementInfo = new Dictionary<string, string>()
+                };
+
+                return JsonConvert.SerializeObject(errorResponse);
+            }
         }
 
         // Add more Revit functions here as needed

@@ -3,23 +3,28 @@ import json
 import re
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-from revit_element_tools.wall_tools import create_wall
-from revit_element_tools.window_tools import add_window_to_wall
+from revit_element_tools.wall_tools import *
+from revit_element_tools.window_tools import *
+from revit_element_tools.common_tools import *
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Define the tools list
-tools = [create_wall, add_window_to_wall]
+# Update the tools list to include the new tool
+tools = [create_wall, add_window_to_wall, get_wall_types, change_wall_type, get_selected_elements]
+
+# Update the TOOL_TO_FUNCTIONS_DICT to include the new tool
+TOOL_TO_FUNCTIONS_DICT = {
+    "create_wall": create_wall,
+    "add_window_to_wall": add_window_to_wall,
+    "get_wall_types": get_wall_types,
+    "change_wall_type": change_wall_type,
+    "get_selected_elements": get_selected_elements
+}
 
 # Set up the LLM with the provided API key
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 llm_with_tools = llm.bind_tools(tools)
-
-TOOL_TO_FUNCTIONS_DICT = {
-    "create_wall": create_wall,
-    "add_window_to_wall": add_window_to_wall
-}
 
 # Main function
 def main():
@@ -50,15 +55,25 @@ Instructions:
    - Windows and doors must be placed on existing walls using their element IDs
    - Plan the logical sequence (walls first, then openings)
 
-4. Common workflows:
+4. For wall type operations:
+   - When asked to change wall types, first use get_wall_types to show available options
+   - Then use change_wall_type with the appropriate wall IDs and type name
+   - Use fuzzy matching for type names - exact matches aren't required
+
+5. Common workflows:
    - Room creation: Four connected walls in sequence
    - Window placement: Create wall first, then add windows with proper spacing
    - Complete building elements: Walls followed by doors and windows
+   - Wall type change: Get types first, then apply changes
 
-5. If no tools are applicable:
-   - Respond with "I don't know my guy" and nothing else
+6. If no tools are applicable:
+   - Try and use your best judgement to answer.
 
-6. Never mention tools or technical details to the user
+7. Never mention tools or technical details to the user
+
+8. If user asks to undo a step, try to see if you can use the existing tools in a way that can undo what you did last. There is no
+"undo" tool per se but you might be able to use the tools you have in a way that you undo the last action you did.
+Try to undo as much as you can and inform user about the changes you made.
 """
 
     messages = [{"role": "system", "content": system_message}]
