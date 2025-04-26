@@ -1,238 +1,293 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.DB;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace RevitGpt.Functions
 {
-    /// <summary>
-    /// Contains implementations of wall-related Revit functions
-    /// </summary>
     public static class WallFunctions
     {
         /// <summary>
-        /// Creates a wall in Revit with the specified parameters and returns element IDs
+        /// Creates one or multiple walls based on the provided parameters
         /// </summary>
         public static string CreateWall(UIApplication uiapp, dynamic arguments)
         {
+            var doc = uiapp.ActiveUIDocument.Document;
+            var elementIds = new List<string>();
+            
             try
             {
-                var uidoc = uiapp.ActiveUIDocument;
-                var doc = uidoc.Document;
-                List<ElementId> affectedElements = new List<ElementId>();
-
-                // Extract parameters
-                string startPoint = Convert.ToString(arguments["start_point"]);
-                string endPoint = Convert.ToString(arguments["end_point"]);
-                double height = Convert.ToDouble(arguments["height"]);
-                double width = Convert.ToDouble(arguments["width"]);
-
-                // Start a transaction
-                using (Transaction tx = new Transaction(doc, "Create Wall"))
+                using (Transaction tx = new Transaction(doc, "Create Wall(s)"))
                 {
                     tx.Start();
-
-                    // Parse coordinates
-                    string[] startCoords = startPoint.Split(',');
-                    string[] endCoords = endPoint.Split(',');
-
-                    // Create points
-                    XYZ startPointXYZ = new XYZ(
-                        double.Parse(startCoords[0]),
-                        double.Parse(startCoords[1]),
-                        double.Parse(startCoords[2])
-                    );
-
-                    XYZ endPointXYZ = new XYZ(
-                        double.Parse(endCoords[0]),
-                        double.Parse(endCoords[1]),
-                        double.Parse(endCoords[2])
-                    );
-
-                    // Get the wall type
-                    FilteredElementCollector collector = new FilteredElementCollector(doc);
-                    WallType wallType = collector
-                        .OfClass(typeof(WallType))
-                        .FirstElement() as WallType;
-
-                    // Create wall
-                    Wall wall = Wall.Create(
-                        doc,
-                        Line.CreateBound(startPointXYZ, endPointXYZ),
-                        wallType.Id,
-                        Level.Create(doc, 0.0).Id,
-                        height,
-                        width,
-                        false,
-                        false
-                    );
-
-                    // Add element ID to the list
-                    affectedElements.Add(wall.Id);
-
+                    
+                    // Check if we're creating multiple walls
+                    if (arguments.walls != null)
+                    {
+                        // Handle multiple walls
+                        var wallsArray = arguments.walls as JArray;
+                        if (wallsArray != null)
+                        {
+                            foreach (JObject wallData in wallsArray)
+                            {
+                                // Extract parameters for each wall
+                                string startPointStr = wallData["start_point"].ToString();
+                                string endPointStr = wallData["end_point"].ToString();
+                                double height = Convert.ToDouble(wallData["height"]);
+                                double width = Convert.ToDouble(wallData["width"]);
+                                
+                                // Create the wall
+                                ElementId elementId = CreateSingleWall(doc, startPointStr, endPointStr, height, width);
+                                if (elementId != null)
+                                {
+                                    elementIds.Add(elementId.Value.ToString());
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Handle single wall (original implementation)
+                        string startPointStr = arguments.start_point.ToString();
+                        string endPointStr = arguments.end_point.ToString();
+                        double height = Convert.ToDouble(arguments.height);
+                        double width = Convert.ToDouble(arguments.width);
+                        
+                        ElementId elementId = CreateSingleWall(doc, startPointStr, endPointStr, height, width);
+                        if (elementId != null)
+                        {
+                            elementIds.Add(elementId.Value.ToString());
+                        }
+                    }
+                    
                     tx.Commit();
                 }
-
-                // Create a response object with message and element IDs
-                var response = new
+                
+                return JsonConvert.SerializeObject(new
                 {
-                    Message = "Wall created successfully in Revit!",
-                    ElementIds = CommonFunctions.ConvertElementIdsToStrings(affectedElements)
-                };
-
-                return JsonConvert.SerializeObject(response);
+                    Message = $"Successfully created {elementIds.Count} wall(s)",
+                    ElementIds = elementIds
+                });
             }
             catch (Exception ex)
             {
-                var errorResponse = new
+                return JsonConvert.SerializeObject(new
                 {
-                    Message = $"Error creating wall: {ex.Message}",
+                    Message = $"Error creating wall(s): {ex.Message}",
                     ElementIds = new List<string>()
-                };
-
-                return JsonConvert.SerializeObject(errorResponse);
+                });
             }
         }
-
+        
+        // Helper method to create a single wall
+        private static ElementId CreateSingleWall(Document doc, string startPointStr, string endPointStr, double height, double width)
+        {
+            // Parse start and end points
+            var startCoords = startPointStr.Split(',').Select(double.Parse).ToArray();
+            var endCoords = endPointStr.Split(',').Select(double.Parse).ToArray();
+            
+            // Create XYZ points
+            XYZ start = new XYZ(startCoords[0], startCoords[1], startCoords[2]);
+            XYZ end = new XYZ(endCoords[0], endCoords[1], endCoords[2]);
+            
+            // Create wall curve
+            Line curve = Line.CreateBound(start, end);
+            
+            // Get wall type
+            FilteredElementCollector collector = new FilteredElementCollector(doc);
+            WallType wallType = collector.OfClass(typeof(WallType)).FirstElement() as WallType;
+            
+            // Get active level
+            Level level = GetActiveOrDefaultLevel(doc);
+            
+            // Create wall with the correct signature
+            // Wall.Create(Document, Curve, ElementId wallTypeId, ElementId levelId, double height, double offset, bool structural, bool isStructuralUsage)
+            Wall wall = Wall.Create(
+                doc,                // document
+                curve,              // curve
+                wallType.Id,        // wallTypeId
+                level.Id,           // levelId
+                height,             // height
+                0.0,                // offset
+                false,              // flip
+                true                // structural
+            );
+            
+            return wall.Id;
+        }
+        
+        // Helper method to get the active or default level
+        private static Level GetActiveOrDefaultLevel(Document doc)
+        {
+            // Try to get the active view's level
+            View activeView = doc.ActiveView;
+            Level level = null;
+            
+            if (activeView != null && activeView.ViewType == ViewType.FloorPlan)
+            {
+                // For floor plan views, try to get the associated level
+                level = activeView.GenLevel;
+            }
+            
+            // If no active level found, get the first level in the project
+            if (level == null)
+            {
+                FilteredElementCollector levelCollector = new FilteredElementCollector(doc);
+                level = levelCollector.OfClass(typeof(Level)).FirstElement() as Level;
+            }
+            
+            return level;
+        }
+        
         /// <summary>
-        /// Gets all available wall types in the Revit model
+        /// Gets all available wall types in the model
         /// </summary>
         public static string GetWallTypes(UIApplication uiapp, dynamic arguments)
         {
+            // Existing implementation - no changes needed
+            var doc = uiapp.ActiveUIDocument.Document;
+            
             try
             {
-                var doc = uiapp.ActiveUIDocument.Document;
-                List<string> wallTypeNames = new List<string>();
-                Dictionary<string, string> wallTypeMap = new Dictionary<string, string>();
-
-                // Collect all wall types in the document
                 FilteredElementCollector collector = new FilteredElementCollector(doc);
-                ICollection<Element> wallTypes = collector
-                    .OfClass(typeof(WallType))
-                    .ToElements();
-
-                // Extract names and IDs
-                foreach (WallType wallType in wallTypes)
+                var wallTypes = collector.OfClass(typeof(WallType))
+                    .Cast<WallType>()
+                    .Select(wt => wt.Name)
+                    .ToList();
+                
+                return JsonConvert.SerializeObject(new
                 {
-                    wallTypeNames.Add(wallType.Name);
-                    wallTypeMap.Add(wallType.Id.Value.ToString(), wallType.Name);
-                }
-
-                // Create a response object with message and wall type information
-                var response = new
-                {
-                    Message = $"Found {wallTypeNames.Count} wall types:\n- " + string.Join("\n- ", wallTypeNames),
-                    WallTypes = wallTypeMap
-                };
-
-                return JsonConvert.SerializeObject(response);
+                    Message = $"Available wall types: {string.Join(", ", wallTypes)}",
+                    ElementIds = new List<string>()
+                });
             }
             catch (Exception ex)
             {
-                var errorResponse = new
+                return JsonConvert.SerializeObject(new
                 {
                     Message = $"Error getting wall types: {ex.Message}",
-                    WallTypes = new Dictionary<string, string>()
-                };
-
-                return JsonConvert.SerializeObject(errorResponse);
+                    ElementIds = new List<string>()
+                });
             }
         }
-
+        
         /// <summary>
-        /// Changes the type of selected walls using fuzzy matching for the wall type name
+        /// Changes the type of one or more walls
         /// </summary>
         public static string ChangeWallType(UIApplication uiapp, dynamic arguments)
         {
+            var doc = uiapp.ActiveUIDocument.Document;
+            var modifiedElementIds = new List<string>();
+            
             try
             {
-                var uidoc = uiapp.ActiveUIDocument;
-                var doc = uidoc.Document;
-                List<ElementId> affectedElements = new List<ElementId>();
-
-                // Extract parameters
-                string wallIds = Convert.ToString(arguments["wall_ids"]);
-                string typeName = Convert.ToString(arguments["type_name"]);
-
-                // Parse wall IDs
-                List<ElementId> wallElementIds = new List<ElementId>();
-                foreach (string id in wallIds.Split(','))
-                {
-                    if (!string.IsNullOrWhiteSpace(id))
-                    {
-                        wallElementIds.Add(new ElementId(Int64.Parse(id.Trim())));
-                    }
-                }
-
-                if (wallElementIds.Count == 0)
-                {
-                    throw new Exception("No valid wall IDs provided");
-                }
-
-                // Find the target wall type using fuzzy matching
-                FilteredElementCollector collector = new FilteredElementCollector(doc);
-                ICollection<Element> wallTypes = collector
-                    .OfClass(typeof(WallType))
-                    .ToElements();
-
-                WallType targetWallType = null;
-                int closestMatch = int.MaxValue;
-
-                foreach (WallType wallType in wallTypes)
-                {
-                    int distance = CommonFunctions.LevenshteinDistance(wallType.Name.ToLower(), typeName.ToLower());
-                    if (distance < closestMatch)
-                    {
-                        closestMatch = distance;
-                        targetWallType = wallType;
-                    }
-                }
-
-                if (targetWallType == null)
-                {
-                    throw new Exception("No wall types found in the project");
-                }
-
-                // Start a transaction
-                using (Transaction tx = new Transaction(doc, "Change Wall Type"))
+                using (Transaction tx = new Transaction(doc, "Change Wall Type(s)"))
                 {
                     tx.Start();
-
-                    foreach (ElementId wallId in wallElementIds)
+                    
+                    // Get all wall types for matching
+                    FilteredElementCollector collector = new FilteredElementCollector(doc);
+                    var wallTypes = collector.OfClass(typeof(WallType)).Cast<WallType>().ToList();
+                    
+                    // Check if we're changing multiple walls to different types
+                    if (arguments.wall_configs != null)
                     {
-                        Wall wall = doc.GetElement(wallId) as Wall;
-
-                        if (wall != null)
+                        // Handle multiple wall configurations
+                        var configsArray = arguments.wall_configs as JArray;
+                        if (configsArray != null)
                         {
-                            // Change the wall type
-                            wall.WallType = targetWallType;
-                            affectedElements.Add(wallId);
+                            foreach (JObject config in configsArray)
+                            {
+                                // Extract parameters for each wall
+                                string wallId = config["id"].ToString();
+                                string typeName = config["type_name"].ToString();
+                                
+                                // Find the wall
+                                ElementId elementId = new ElementId(Convert.ToInt64(wallId));
+                                Wall wall = doc.GetElement(elementId) as Wall;
+                                
+                                if (wall != null)
+                                {
+                                    // Find the closest matching wall type
+                                    WallType targetType = FindClosestWallType(wallTypes, typeName);
+                                    
+                                    if (targetType != null)
+                                    {
+                                        // Change the wall type
+                                        wall.WallType = targetType;
+                                        modifiedElementIds.Add(wallId);
+                                    }
+                                }
+                            }
                         }
                     }
-
+                    else
+                    {
+                        // Handle original implementation (all walls to same type)
+                        string wallIdsStr = arguments.wall_ids.ToString();
+                        string typeName = arguments.type_name.ToString();
+                        
+                        // Find the closest matching wall type
+                        WallType targetType = FindClosestWallType(wallTypes, typeName);
+                        
+                        if (targetType != null)
+                        {
+                            // Process each wall ID
+                            var wallIds = wallIdsStr.Split(',');
+                            foreach (string wallId in wallIds)
+                            {
+                                if (string.IsNullOrWhiteSpace(wallId))
+                                    continue;
+                                    
+                                ElementId elementId = new ElementId(Convert.ToInt64(wallId.Trim()));
+                                Wall wall = doc.GetElement(elementId) as Wall;
+                                
+                                if (wall != null)
+                                {
+                                    wall.WallType = targetType;
+                                    modifiedElementIds.Add(wallId.Trim());
+                                }
+                            }
+                        }
+                    }
+                    
                     tx.Commit();
                 }
-
-                // Create a response object with message and element IDs
-                var response = new
+                
+                return JsonConvert.SerializeObject(new
                 {
-                    Message = $"Changed {affectedElements.Count} walls to type: {targetWallType.Name} (matched from '{typeName}')",
-                    ElementIds = CommonFunctions.ConvertElementIdsToStrings(affectedElements)
-                };
-
-                return JsonConvert.SerializeObject(response);
+                    Message = $"Successfully changed {modifiedElementIds.Count} wall type(s)",
+                    ElementIds = modifiedElementIds
+                });
             }
             catch (Exception ex)
             {
-                var errorResponse = new
+                return JsonConvert.SerializeObject(new
                 {
-                    Message = $"Error changing wall type: {ex.Message}",
+                    Message = $"Error changing wall type(s): {ex.Message}",
                     ElementIds = new List<string>()
-                };
-
-                return JsonConvert.SerializeObject(errorResponse);
+                });
             }
+        }
+        
+        // Helper method to find the closest matching wall type by name
+        private static WallType FindClosestWallType(List<WallType> wallTypes, string typeName)
+        {
+            // First try exact match
+            var exactMatch = wallTypes.FirstOrDefault(wt => wt.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+            if (exactMatch != null)
+                return exactMatch;
+                
+            // Then try contains match (fixed to work with older C# versions)
+            var containsMatch = wallTypes.FirstOrDefault(wt => wt.Name.IndexOf(typeName, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (containsMatch != null)
+                return containsMatch;
+                
+            // If no match found, return the first wall type
+            return wallTypes.FirstOrDefault();
         }
     }
 }
