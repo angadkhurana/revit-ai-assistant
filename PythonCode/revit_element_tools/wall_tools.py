@@ -5,7 +5,7 @@ import json
 
 class CreateWallsArgs(BaseModel):
     walls: str = Field(
-        description="JSON string containing an array of wall definitions. Each wall should have start_point, end_point, height, and width. Example: '[{\"start_point\":\"0,0,0\",\"end_point\":\"10,0,0\",\"height\":10.0,\"width\":0.5},{\"start_point\":\"10,0,0\",\"end_point\":\"10,10,0\",\"height\":10.0,\"width\":0.5}]'",
+        description="JSON string containing an array of wall definitions. Each wall should have start_point, end_point, height, width, and level_name. Example: '[{\"start_point\":\"0,0,0\",\"end_point\":\"10,0,0\",\"height\":10.0,\"width\":0.5,\"level_name\":\"Level 1\"}]'",
         default=""
     )
     start_point: str = Field(
@@ -24,17 +24,22 @@ class CreateWallsArgs(BaseModel):
         description="Width in feet. Default: 0.5. Only used if walls parameter is empty.",
         default=0.5
     )
+    level_name: str = Field(
+        description="Name of the level to place the wall on. Default: 'Level 1'. Only used if walls parameter is empty.",
+        default="Level 1"
+    )
 
 # Define the tool to create multiple walls in Revit using the @tool decorator
 @tool(args_schema=CreateWallsArgs)
-def create_wall(walls: str = "", start_point: str = "0,0,0", end_point: str = "10,0,0", height: float = 10.0, width: float = 0.5) -> str:
+def create_wall(walls: str = "", start_point: str = "0,0,0", end_point: str = "10,0,0", height: float = 10.0, width: float = 0.5, level_name: str = "Level 1") -> str:
     """
     Create one or more walls in Revit with optimal efficiency.
 
     - To batch-create walls, provide a JSON string in 'walls' containing an array of wall definitions.
-    - Each definition must include 'start_point' ("x,y,z"), 'end_point' ("x,y,z"), 'height', and 'width'.
+    - Each definition must include 'start_point' ("x,y,z"), 'end_point' ("x,y,z"), 'height', 'width', and 'level_name'.
     - When 'walls' is empty, a single wall is created using the individual parameters.
     - Coordinates for multiple walls are calculated precisely to ensure accurate placement; review each point carefully.
+    - The level_name parameter specifies which Revit level to place the wall on.
     """
     # Prepare arguments
     if walls:
@@ -48,7 +53,8 @@ def create_wall(walls: str = "", start_point: str = "0,0,0", end_point: str = "1
             "start_point": start_point,
             "end_point": end_point,
             "height": height,
-            "width": width
+            "width": width,
+            "level_name": level_name
         }
     # Send to Revit server and get response
     response = send_to_revit_server("create_wall", args)

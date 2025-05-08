@@ -52,6 +52,7 @@ Guidelines:
    - Room: four connected walls in sequence, then openings.
    - Complete build: walls → doors/windows.
 7. If a user needs to undo, attempt reversal via existing tools and inform them of changes made.
+8. You must try to use the user tools as much as possible, but if you can't use the given tools to make the request, inform the user and terminate.
 
 Never expose tool internals or technical details to the user.'''
 
