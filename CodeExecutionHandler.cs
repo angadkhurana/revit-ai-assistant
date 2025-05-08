@@ -17,25 +17,16 @@ namespace RevitGpt
 
             try
             {
-                // Dispatch to the appropriate function based on the function name
-                switch (_functionName)
+                // Use the function registry to get and execute the function
+                if (RevitFunctionRegistry.FunctionExists(_functionName))
                 {
-                    case "create_wall":
-                        // Safely extract values from dynamic object
-                        string startPoint = Convert.ToString(_arguments["start_point"]);
-                        string endPoint = Convert.ToString(_arguments["end_point"]);
-                        double height = Convert.ToDouble(_arguments["height"]);
-                        double width = Convert.ToDouble(_arguments["width"]);
-
-                        result = RevitFunctions.CreateWall(app, startPoint, endPoint, height, width);
-                        success = true;
-                        break;
-
-                    // Add more function cases here
-
-                    default:
-                        result = $"Unknown function: {_functionName}";
-                        break;
+                    var function = RevitFunctionRegistry.GetFunction(_functionName);
+                    result = function(app, _arguments);
+                    success = true;
+                }
+                else
+                {
+                    result = $"Unknown function: {_functionName}";
                 }
             }
             catch (Exception ex)
