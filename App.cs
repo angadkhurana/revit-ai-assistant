@@ -11,6 +11,7 @@ namespace RevitGpt
         {
             try
             {
+                //huihuihihiuh
                 // Create a Ribbon Panel
                 RibbonPanel ribbonPanel = application.CreateRibbonPanel("AI Assistant");
 
