@@ -95,6 +95,94 @@ namespace RevitGpt.Functions
         }
 
         /// <summary>
+        /// Get coordinates and information about windows on a wall
+        /// </summary>
+        public static string GetWindowsOnWall(UIApplication uiapp, dynamic arguments)
+        {
+            var doc = uiapp.ActiveUIDocument.Document;
+
+            // Get the wall ID
+            string wallIdString = arguments.wall_id.ToString();
+            ElementId wallId = new ElementId(int.Parse(wallIdString));
+
+            try
+            {
+                // Get the wall
+                Wall wall = doc.GetElement(wallId) as Wall;
+                if (wall == null)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        Message = "Wall not found",
+                        Windows = new object[0]
+                    });
+                }
+
+                // Get the wall's location curve
+                LocationCurve locationCurve = wall.Location as LocationCurve;
+                Curve curve = locationCurve.Curve;
+                XYZ startPoint = curve.GetEndPoint(0);
+                XYZ endPoint = curve.GetEndPoint(1);
+
+                // Find all windows hosted on this wall
+                FilteredElementCollector collector = new FilteredElementCollector(doc);
+                List<FamilyInstance> windows = collector
+                    .OfClass(typeof(FamilyInstance))
+                    .OfCategory(BuiltInCategory.OST_Windows)
+                    .Cast<FamilyInstance>()
+                    .Where(w => w.Host != null && w.Host.Id.Equals(wallId))
+                    .ToList();
+
+                List<object> windowInfoList = new List<object>();
+
+                foreach (FamilyInstance window in windows)
+                {
+                    // Get window properties
+                    double width = window.get_Parameter(BuiltInParameter.WINDOW_WIDTH).AsDouble();
+                    double height = window.get_Parameter(BuiltInParameter.WINDOW_HEIGHT).AsDouble();
+                    double sillHeight = window.get_Parameter(BuiltInParameter.INSTANCE_SILL_HEIGHT_PARAM).AsDouble();
+
+                    // Get window location point
+                    LocationPoint locationPoint = window.Location as LocationPoint;
+                    XYZ centerPoint = locationPoint.Point;
+
+                    // Calculate distance from wall start
+                    XYZ wallDir = (endPoint - startPoint).Normalize();
+                    double distanceFromStart = startPoint.DistanceTo(centerPoint);
+
+                    // Project center point to wall line to get accurate distance along wall
+                    XYZ vectorToPoint = centerPoint - startPoint;
+                    double projection = vectorToPoint.DotProduct(wallDir);
+
+                    // Add to result list
+                    windowInfoList.Add(new
+                    {
+                        Id = window.Id.IntegerValue.ToString(),
+                        Width = width,
+                        Height = height,
+                        SillHeight = sillHeight,
+                        CenterPoint = new { X = centerPoint.X, Y = centerPoint.Y, Z = centerPoint.Z },
+                        DistanceFromStart = projection
+                    });
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    Message = $"Found {windows.Count} window(s) on wall {wallIdString}",
+                    Windows = windowInfoList
+                });
+            }
+            catch (Exception ex)
+            {
+                return JsonConvert.SerializeObject(new
+                {
+                    Message = $"Error getting windows: {ex.Message}",
+                    Windows = new object[0]
+                });
+            }
+        }
+
+        /// <summary>
         /// Helper method to create a single window
         /// </summary>
         private static ElementId CreateWindow(Document doc, ElementId wallId, double width, double height,

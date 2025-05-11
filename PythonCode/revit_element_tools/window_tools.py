@@ -67,3 +67,30 @@ def add_window_to_wall(wall_id: str, windows: str = "", window_width: float = 3.
         return f"{message} Created window elements with IDs: {', '.join(element_ids)}"
     else:
         return message
+
+class GetWindowsOnWallArgs(BaseModel):
+    wall_id: str = Field(
+        description="ID of the wall to get windows from"
+    )
+
+@tool(args_schema=GetWindowsOnWallArgs)
+def get_windows_on_wall(wall_id: str) -> str:
+    """Use this to get coordinates and information about all windows on a specific wall.
+    
+    Returns detailed information for each window, including:
+    - ID of the window
+    - Width and height
+    - Sill height
+    - Center point coordinates (X, Y, Z)
+    - Distance from start of the wall
+    """
+    # Prepare arguments
+    args = {
+        "wall_id": wall_id
+    }
+    
+    # Send to Revit server and get response
+    response = send_to_revit_server("get_windows_on_wall", args)
+    
+    # Return the formatted response - the C# function already formats it properly
+    return response.get("Message", "No message returned")

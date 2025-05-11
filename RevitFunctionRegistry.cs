@@ -24,6 +24,7 @@ namespace RevitGpt
                 
                 // Window functions
                 { "add_window_to_wall", WindowFunctions.AddWindowToWall },
+                { "get_windows_on_wall", WindowFunctions.GetWindowsOnWall },
                 
                 // Selection functions
                 { "get_selected_elements", SelectionFunctions.GetSelectedElements }
