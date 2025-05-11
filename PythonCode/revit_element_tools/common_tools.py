@@ -8,8 +8,9 @@ class GetSelectedElementsArgs(BaseModel):
 
 @tool(args_schema=GetSelectedElementsArgs)
 def get_selected_elements() -> str:
-    """Use this to get the IDs and types of elements currently selected in the Revit UI.
-    Returns information about all currently selected elements including their IDs and element types.
+    """Use this to get detailed information about elements currently selected in the Revit UI.
+    Returns comprehensive information about all currently selected elements including their IDs, 
+    element types, geometry, dimensions, and all relevant parameters specific to each element type.
     """
     # Send to Revit server and get response
     response = send_to_revit_server("get_selected_elements", {})
