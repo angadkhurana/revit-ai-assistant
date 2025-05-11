@@ -1,135 +1,163 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.DB;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Autodesk.Revit.DB.Structure;
 
 namespace RevitGpt.Functions
 {
-    /// <summary>
-    /// Contains implementations of window-related Revit functions
-    /// </summary>
     public static class WindowFunctions
     {
         /// <summary>
-        /// Adds a window to an existing wall in Revit with the specified parameters
+        /// Add one or more windows to a wall
         /// </summary>
         public static string AddWindowToWall(UIApplication uiapp, dynamic arguments)
         {
-            try
+            var doc = uiapp.ActiveUIDocument.Document;
+            List<ElementId> createdElementIds = new List<ElementId>();
+
+            // Get the wall ID
+            string wallIdString = arguments.wall_id.ToString();
+            ElementId wallId = new ElementId(int.Parse(wallIdString));
+
+            using (Transaction trans = new Transaction(doc, "Add Window(s) to Wall"))
             {
-                var uidoc = uiapp.ActiveUIDocument;
-                var doc = uidoc.Document;
-                List<ElementId> affectedElements = new List<ElementId>();
+                trans.Start();
 
-                // Extract parameters
-                string wallId = Convert.ToString(arguments["wall_id"]);
-                double windowWidth = Convert.ToDouble(arguments["window_width"]);
-                double windowHeight = Convert.ToDouble(arguments["window_height"]);
-                double distanceFromStart = Convert.ToDouble(arguments["distance_from_start"]);
-                double sillHeight = Convert.ToDouble(arguments["sill_height"]);
-
-                // Start a transaction
-                using (Transaction tx = new Transaction(doc, "Add Window to Wall"))
+                try
                 {
-                    tx.Start();
-
-                    // Get the wall by ID
-                    ElementId wallElementId = new ElementId(Int64.Parse(wallId));
-                    Wall wall = doc.GetElement(wallElementId) as Wall;
-
-                    if (wall == null)
+                    // Check if we're dealing with batch window creation
+                    if (arguments.windows != null)
                     {
-                        throw new Exception($"Wall with ID {wallId} not found");
+                        // Process multiple windows
+                        JArray windowsArray = arguments.windows;
+                        foreach (JObject windowObj in windowsArray)
+                        {
+                            // Get window parameters
+                            double width = (double)windowObj["width"];
+                            double height = (double)windowObj["height"];
+                            double distanceFromStart = (double)windowObj["distance_from_start"];
+                            double sillHeight = (double)windowObj["sill_height"];
+
+                            // Create the window
+                            ElementId newWindowId = CreateWindow(doc, wallId, width, height, distanceFromStart, sillHeight);
+                            if (newWindowId != ElementId.InvalidElementId)
+                            {
+                                createdElementIds.Add(newWindowId);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Process single window (original behavior)
+                        double width = (double)arguments.window_width;
+                        double height = (double)arguments.window_height;
+                        double distanceFromStart = (double)arguments.distance_from_start;
+                        double sillHeight = (double)arguments.sill_height;
+
+                        // Create the window
+                        ElementId newWindowId = CreateWindow(doc, wallId, width, height, distanceFromStart, sillHeight);
+                        if (newWindowId != ElementId.InvalidElementId)
+                        {
+                            createdElementIds.Add(newWindowId);
+                        }
                     }
 
-                    // Get a window family symbol (type)
-                    FilteredElementCollector collector = new FilteredElementCollector(doc);
-                    FamilySymbol windowType = collector
-                        .OfClass(typeof(FamilySymbol))
-                        .OfCategory(BuiltInCategory.OST_Windows)
-                        .FirstElement() as FamilySymbol;
-
-                    if (windowType == null)
-                    {
-                        throw new Exception("No window types found in the project");
-                    }
-
-                    // Ensure the family symbol is active
-                    if (!windowType.IsActive)
-                    {
-                        windowType.Activate();
-                    }
-
-                    // Get the wall's location line
-                    LocationCurve wallLocationCurve = wall.Location as LocationCurve;
-                    Curve wallCurve = wallLocationCurve.Curve;
-                    XYZ wallStartPoint = wallCurve.GetEndPoint(0);
-                    XYZ wallEndPoint = wallCurve.GetEndPoint(1);
-
-                    // Calculate the direction vector along the wall
-                    XYZ wallDirection = (wallEndPoint - wallStartPoint).Normalize();
-
-                    // Calculate the window insertion point
-                    XYZ windowLocation = wallStartPoint + wallDirection * distanceFromStart;
-
-                    // Set the window insertion point with proper elevation (sill height)
-                    XYZ insertionPoint = new XYZ(
-                        windowLocation.X,
-                        windowLocation.Y,
-                        windowLocation.Z + sillHeight
-                    );
-
-                    // Get the level from the wall
-                    Level level = doc.GetElement(wall.LevelId) as Level;
-
-                    // Create the window instance
-                    FamilyInstance window = doc.Create.NewFamilyInstance(
-                        insertionPoint,
-                        windowType,
-                        wall,
-                        level,
-                        Autodesk.Revit.DB.Structure.StructuralType.NonStructural
-                    );
-
-                    // Set window dimensions
-                    Parameter widthParam = window.LookupParameter("Width");
-                    if (widthParam != null && widthParam.StorageType == StorageType.Double)
-                    {
-                        widthParam.Set(windowWidth);
-                    }
-
-                    Parameter heightParam = window.LookupParameter("Height");
-                    if (heightParam != null && heightParam.StorageType == StorageType.Double)
-                    {
-                        heightParam.Set(windowHeight);
-                    }
-
-                    // Add element ID to the list
-                    affectedElements.Add(window.Id);
-
-                    tx.Commit();
+                    trans.Commit();
                 }
-
-                // Create a response object with message and element IDs
-                var response = new
+                catch (Exception ex)
                 {
-                    Message = "Window added successfully to the wall!",
-                    ElementIds = CommonFunctions.ConvertElementIdsToStrings(affectedElements)
-                };
-
-                return JsonConvert.SerializeObject(response);
+                    trans.RollBack();
+                    return $"Error adding window(s): {ex.Message}";
+                }
             }
-            catch (Exception ex)
+
+            // Return result
+            if (createdElementIds.Count > 0)
             {
-                var errorResponse = new
+                return JsonConvert.SerializeObject(new
                 {
-                    Message = $"Error adding window to wall: {ex.Message}",
-                    ElementIds = new List<string>()
-                };
-
-                return JsonConvert.SerializeObject(errorResponse);
+                    Message = $"Successfully added {createdElementIds.Count} window(s) to wall.",
+                    ElementIds = createdElementIds.Select(id => id.IntegerValue.ToString()).ToArray()
+                });
             }
+            else
+            {
+                return JsonConvert.SerializeObject(new
+                {
+                    Message = "No windows were created. Please check the wall ID and parameters.",
+                    ElementIds = new string[0]
+                });
+            }
+        }
+
+        /// <summary>
+        /// Helper method to create a single window
+        /// </summary>
+        private static ElementId CreateWindow(Document doc, ElementId wallId, double width, double height,
+                                             double distanceFromStart, double sillHeight)
+        {
+            // Get the wall
+            Wall wall = doc.GetElement(wallId) as Wall;
+            if (wall == null)
+            {
+                return ElementId.InvalidElementId;
+            }
+
+            // Get the wall curve
+            LocationCurve locationCurve = wall.Location as LocationCurve;
+            Curve curve = locationCurve.Curve;
+
+            // Get the start and end points
+            XYZ startPoint = curve.GetEndPoint(0);
+            XYZ endPoint = curve.GetEndPoint(1);
+
+            // Calculate the direction of the wall
+            XYZ wallDirection = (endPoint - startPoint).Normalize();
+
+            // Calculate the window position
+            XYZ windowCenterPoint = startPoint + wallDirection * distanceFromStart;
+
+            // Find the level
+            Level level = doc.GetElement(wall.LevelId) as Level;
+
+            // Create the window
+            // Find a window family symbol to use
+            FilteredElementCollector collector = new FilteredElementCollector(doc);
+            FamilySymbol windowSymbol = collector
+                .OfClass(typeof(FamilySymbol))
+                .OfCategory(BuiltInCategory.OST_Windows)
+                .Cast<FamilySymbol>()
+                .FirstOrDefault();
+
+            if (windowSymbol == null)
+            {
+                return ElementId.InvalidElementId;
+            }
+
+            // Ensure the symbol is active
+            if (!windowSymbol.IsActive)
+            {
+                windowSymbol.Activate();
+            }
+
+            // Create the window
+            FamilyInstance window = doc.Create.NewFamilyInstance(
+                windowCenterPoint,
+                windowSymbol,
+                wall,
+                level,
+                StructuralType.NonStructural);
+
+            // Set the window parameters
+            window.get_Parameter(BuiltInParameter.WINDOW_HEIGHT).Set(height);
+            window.get_Parameter(BuiltInParameter.WINDOW_WIDTH).Set(width);
+            window.get_Parameter(BuiltInParameter.INSTANCE_SILL_HEIGHT_PARAM).Set(sillHeight);
+
+            return window.Id;
         }
     }
 }
