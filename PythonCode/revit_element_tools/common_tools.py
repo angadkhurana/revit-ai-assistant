@@ -57,3 +57,23 @@ def get_elements_by_type(element_type: str, level_name: str = None, include_type
     
     # Return the formatted response
     return response.get("Elements", "No elements returned")
+
+class GetLevelNamesArgs(BaseModel):
+    """No arguments needed for getting level names"""
+    pass
+
+@tool(args_schema=GetLevelNamesArgs)
+def get_level_names() -> str:
+    """
+    Get a list of all level names in the current Revit model.
+    Returns an array of level names from the project.
+    """
+    response = send_to_revit_server("get_level_names", {})
+    
+    # Check if Levels key exists in response
+    if "Levels" in response:
+        levels = response["Levels"]
+        message = response.get("Message", "")
+        return f"{message}\nLevel names: {', '.join(levels)}"
+    else:
+        return response.get("Message", "Failed to retrieve levels")

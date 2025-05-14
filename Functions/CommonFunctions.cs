@@ -638,6 +638,36 @@ namespace RevitGpt.Functions
 
             return null;
         }
+
+        public static string GetLevelNames(UIApplication uiapp, dynamic arguments)
+        {
+            try
+            {
+                Document doc = uiapp.ActiveUIDocument.Document;
+                FilteredElementCollector collector = new FilteredElementCollector(doc);
+                IList<Element> levels = collector.OfClass(typeof(Level)).ToElements();
+                
+                var levelNames = new List<string>();
+                foreach (Level level in levels)
+                {
+                    levelNames.Add(level.Name);
+                }
+
+                return JsonConvert.SerializeObject(new 
+                {
+                    Message = $"Found {levelNames.Count} levels",
+                    Levels = levelNames
+                });
+            }
+            catch (Exception ex)
+            {
+                return JsonConvert.SerializeObject(new 
+                {
+                    Message = $"Error getting levels: {ex.Message}",
+                    Levels = new List<string>()
+                });
+            }
+        }
     }
 
 }
