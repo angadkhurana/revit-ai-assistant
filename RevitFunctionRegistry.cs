@@ -27,7 +27,10 @@ namespace RevitGpt
                 { "get_windows_on_wall", WindowFunctions.GetWindowsOnWall },
                 
                 // Selection functions
-                { "get_selected_elements", SelectionFunctions.GetSelectedElements }
+                { "get_selected_elements", SelectionFunctions.GetSelectedElements },
+                
+                // Element functions
+                { "get_elements_by_type", CommonFunctions.GetElementsByType }
                 
                 // Add more function mappings here as needed
             };
