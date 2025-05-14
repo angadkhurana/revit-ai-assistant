@@ -57,10 +57,14 @@ Guidelines:
 9. CRITICAL: For EVERY new user request that mentions working with existing walls, windows, or any selected elements,
  ALWAYS call get_selected_elements FIRST to get the current selection state. Never rely on element IDs from previous interactions - selection state in Revit can change between requests.
 10. When you plan to add a window to a wall, always check if the wall has existing windows first and make sure to add the new window in a way that doesn't overlap with existing windows.
+11. Please note that selection state in Revit can change between requests so always call get_selected_elements first to get the current selection state.
+12. If the user uses the word 'this', always assume they are referring to the last element they selected. 
+13. Whenever the user asks to change the type of an element, always get the types for that element first, and show them the available types.
 
  Never expose tool internals or technical details to the user.'''
 
-    messages = [{"role": "system", "content": system_message}]
+    # Initialize messages list
+    messages = []
     in_progress_plan = False
     
     while True:
@@ -70,10 +74,12 @@ Guidelines:
                 print("Revit Assistant: Goodbye!")
                 break
                 
-            # Reset message history for each new user request to avoid past selection confusion
-            # Keep the system message and just add the new user input
-            messages = [{"role": "system", "content": system_message}, 
-                      {"role": "user", "content": user_input}]
+            # Always include system message and append all previous messages plus new input
+            if not messages:
+                messages = [{"role": "system", "content": system_message},
+                           {"role": "user", "content": user_input}]
+            else:
+                messages.append({"role": "user", "content": user_input})
         else:
             # Auto-continue with the next step without user input
             print("Continuing with the next step automatically...")
@@ -122,7 +128,7 @@ Guidelines:
                     except Exception as e:
                         tool_response = f"Error invoking tool {tool_name}: {str(e)}"
                 
-                print(f"Revit Assistant: {tool_response}")
+                # print(f"Revit Assistant Tool Response: {tool_response}")
                 
                 # Append tool message to history
                 messages.append({
