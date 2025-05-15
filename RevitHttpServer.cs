@@ -108,6 +108,28 @@ namespace RevitGpt
                 await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
                 context.Response.Close();
             }
+            else if (context.Request.HttpMethod == "POST" && context.Request.Url.AbsolutePath == "/execute_code")
+            {
+                string requestBody;
+                using (StreamReader reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding))
+                {
+                    requestBody = await reader.ReadToEndAsync();
+                }
+
+                // Parse the request body to get the code
+                dynamic payload = JsonConvert.DeserializeObject(requestBody);
+                string code = Convert.ToString(payload.code);
+
+                // Execute the code in Revit
+                string result = await ExecuteCodeInRevitAsync(code);
+
+                // Send the response
+                byte[] buffer = Encoding.UTF8.GetBytes(result);
+                context.Response.ContentLength64 = buffer.Length;
+                context.Response.ContentType = "text/plain";
+                await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                context.Response.Close();
+            }
             else
             {
                 // Return 404 for all other requests
@@ -138,6 +160,42 @@ namespace RevitGpt
                 _executionHandler.SetExecutionData(
                     functionName,
                     arguments,
+                    callback
+                );
+
+                // Trigger the external event to execute on the main thread
+                _externalEvent.Raise();
+            }
+            catch (Exception ex)
+            {
+                taskCompletionSource.SetResult($"Error: {ex.Message}");
+            }
+
+            return await taskCompletionSource.Task;
+        }
+        
+        private async Task<string> ExecuteCodeInRevitAsync(string code)
+        {
+            var taskCompletionSource = new TaskCompletionSource<string>();
+
+            try
+            {
+                // Create the callback delegate
+                Action<bool, string> callback = (success, result) => {
+                    if (success)
+                    {
+                        taskCompletionSource.SetResult(result);
+                    }
+                    else
+                    {
+                        taskCompletionSource.SetResult($"Execution failed: {result}");
+                    }
+                };
+
+                // Set up the execution handler with special function for dynamic code
+                _executionHandler.SetExecutionData(
+                    "execute_dynamic_code",
+                    code,
                     callback
                 );
 

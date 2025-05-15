@@ -32,9 +32,10 @@ namespace RevitGpt
                 // Element functions
                 { "get_elements_by_type", CommonFunctions.GetElementsByType },
                 { "get_level_names", CommonFunctions.GetLevelNames },
-                { "delete_elements", CommonFunctions.DeleteElements }
+                { "delete_elements", CommonFunctions.DeleteElements },
                 
-                // Add more function mappings here as needed
+                // Dynamic code execution
+                { "execute_dynamic_code", ExecuteDynamicCode }
             };
 
         /// <summary>
@@ -56,6 +57,22 @@ namespace RevitGpt
         public static bool FunctionExists(string functionName)
         {
             return _functions.ContainsKey(functionName);
+        }
+        
+        /// <summary>
+        /// Execute dynamically generated code
+        /// </summary>
+        private static string ExecuteDynamicCode(UIApplication uiapp, dynamic codeString)
+        {
+            try
+            {
+                string code = Convert.ToString(codeString);
+                return DynamicCodeExecutor.ExecuteCode(uiapp, code);
+            }
+            catch (Exception ex)
+            {
+                return $"Error in dynamic code execution: {ex.Message}";
+            }
         }
     }
 }

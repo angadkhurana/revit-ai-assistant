@@ -74,6 +74,7 @@
   <ItemGroup>
     <Compile Include="App.cs" />
     <Compile Include="CodeExecutionHandler.cs" />
+    <Compile Include="DynamicCodeExecutor.cs" />
     <Compile Include="Functions\CommonFunctions.cs" />
     <Compile Include="Functions\SelectionFunctions.cs" />
     <Compile Include="Functions\WallFunctions.cs" />
