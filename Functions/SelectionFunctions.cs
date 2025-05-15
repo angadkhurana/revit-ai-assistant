@@ -1,79 +1,150 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.DB;
 using Newtonsoft.Json;
+using Autodesk.Revit.DB.Structure;
 
 namespace RevitGpt.Functions
 {
-    /// <summary>
-    /// Contains implementations of selection-related Revit functions
-    /// </summary>
     public static class SelectionFunctions
     {
-        /// <summary>
-        /// Gets information about elements currently selected in the Revit UI
-        /// </summary>
         public static string GetSelectedElements(UIApplication uiapp, dynamic arguments)
         {
-            try
+            // Get the current document and selection
+            UIDocument uidoc = uiapp.ActiveUIDocument;
+            Document doc = uidoc.Document;
+
+            // Get the selected element ids
+            ICollection<ElementId> selectedIds = uidoc.Selection.GetElementIds();
+
+            List<object> elementsInfo = new List<object>();
+
+            foreach (ElementId id in selectedIds)
             {
-                var uidoc = uiapp.ActiveUIDocument;
-                var doc = uidoc.Document;
-
-                // Get the currently selected element IDs
-                ICollection<ElementId> selectedIds = uidoc.Selection.GetElementIds();
-
-                Dictionary<string, string> elementInfo = new Dictionary<string, string>();
-                List<string> elementDescriptions = new List<string>();
-
-                if (selectedIds.Count == 0)
+                Element element = doc.GetElement(id);
+                if (element != null)
                 {
-                    return JsonConvert.SerializeObject(new
+                    // Create a dictionary to store element information
+                    Dictionary<string, object> elementData = new Dictionary<string, object>
                     {
-                        Message = "No elements are currently selected in Revit.",
-                        ElementInfo = elementInfo
-                    });
-                }
+                        { "Id", id.IntegerValue },
+                        { "ElementType", element.GetType().Name },
+                        { "Category", element.Category?.Name ?? "No Category" },
+                        { "Name", element.Name }
+                    };
 
-                // Process each selected element
-                foreach (ElementId id in selectedIds)
-                {
-                    Element elem = doc.GetElement(id);
-                    if (elem != null)
+                    // Get element geometry
+                    try
                     {
-                        string elemType = elem.GetType().Name;
-
-                        // Get category name if available
-                        string category = (elem.Category != null) ? elem.Category.Name : "No Category";
-
-                        // Add to dictionary
-                        elementInfo.Add(id.Value.ToString(), $"{elemType} ({category})");
-
-                        // Add to descriptions list
-                        elementDescriptions.Add($"ID: {id.Value}, Type: {elemType}, Category: {category}");
+                        Options geomOptions = new Options();
+                        GeometryElement geomElem = element.get_Geometry(geomOptions);
+                        if (geomElem != null)
+                        {
+                            // Get basic geometry info
+                            elementData["BoundingBox"] = GetBoundingBoxInfo(element.get_BoundingBox(null));
+                        }
                     }
+                    catch (Exception ex)
+                    {
+                        elementData["GeometryError"] = ex.Message;
+                    }
+
+                    // Add element-specific properties based on element type
+                    AddElementSpecificData(element, elementData);
+
+                    elementsInfo.Add(elementData);
                 }
-
-                // Create a response object with message and element information
-                var response = new
-                {
-                    Message = $"Found {selectedIds.Count} selected elements:\n- " + string.Join("\n- ", elementDescriptions),
-                    ElementInfo = elementInfo
-                };
-
-                return JsonConvert.SerializeObject(response);
             }
-            catch (Exception ex)
+
+            // Create the response object
+            var response = new Dictionary<string, object>
             {
-                var errorResponse = new
-                {
-                    Message = $"Error getting selected elements: {ex.Message}",
-                    ElementInfo = new Dictionary<string, string>()
-                };
+                { "Status", "Success" },
+                { "Message", JsonConvert.SerializeObject(new Dictionary<string, object>
+                    {
+                        { "Count", selectedIds.Count },
+                        { "Elements", elementsInfo }
+                    })
+                }
+            };
 
-                return JsonConvert.SerializeObject(errorResponse);
+            return JsonConvert.SerializeObject(response);
+        }
+
+        private static Dictionary<string, double> GetBoundingBoxInfo(BoundingBoxXYZ box)
+        {
+            if (box == null)
+                return null;
+
+            return new Dictionary<string, double>
+            {
+                { "MinX", box.Min.X },
+                { "MinY", box.Min.Y },
+                { "MinZ", box.Min.Z },
+                { "MaxX", box.Max.X },
+                { "MaxY", box.Max.Y },
+                { "MaxZ", box.Max.Z },
+                { "SizeX", box.Max.X - box.Min.X },
+                { "SizeY", box.Max.Y - box.Min.Y },
+                { "SizeZ", box.Max.Z - box.Min.Z }
+            };
+        }
+
+        private static void AddElementSpecificData(Element element, Dictionary<string, object> data)
+        {
+            // Add specific properties based on element type
+            // Examples for common element types:
+
+            // Walls
+            if (element is Wall wall)
+            {
+                data["WallData"] = new Dictionary<string, object>
+                {
+                    { "Length", wall.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH)?.AsDouble() ?? 0 },
+                    { "Height", wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM)?.AsDouble() ?? 0 },
+                    { "Area", wall.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED)?.AsDouble() ?? 0 },
+                    { "Volume", wall.get_Parameter(BuiltInParameter.HOST_VOLUME_COMPUTED)?.AsDouble() ?? 0 },
+                    { "IsStructural", wall.StructuralUsage != StructuralWallUsage.NonBearing }
+                };
             }
+
+            // Windows
+            else if (element is FamilyInstance familyInstance && familyInstance.Symbol.Family.FamilyCategory.Id.IntegerValue == (int)BuiltInCategory.OST_Windows)
+            {
+                data["WindowData"] = new Dictionary<string, object>
+                {
+                    { "Width", familyInstance.Symbol.get_Parameter(BuiltInParameter.WINDOW_WIDTH)?.AsDouble() ?? 0 },
+                    { "Height", familyInstance.Symbol.get_Parameter(BuiltInParameter.WINDOW_HEIGHT)?.AsDouble() ?? 0 },
+                    { "Sill Height", familyInstance.get_Parameter(BuiltInParameter.INSTANCE_SILL_HEIGHT_PARAM)?.AsDouble() ?? 0 },
+                    { "HostId", familyInstance.Host?.Id.IntegerValue }
+                };
+            }
+
+            // Doors
+            else if (element is FamilyInstance doorInstance && doorInstance.Symbol.Family.FamilyCategory.Id.IntegerValue == (int)BuiltInCategory.OST_Doors)
+            {
+                data["DoorData"] = new Dictionary<string, object>
+                {
+                    { "Width", doorInstance.Symbol.get_Parameter(BuiltInParameter.DOOR_WIDTH)?.AsDouble() ?? 0 },
+                    { "Height", doorInstance.Symbol.get_Parameter(BuiltInParameter.DOOR_HEIGHT)?.AsDouble() ?? 0 },
+                    { "HostId", doorInstance.Host?.Id.IntegerValue }
+                };
+            }
+
+            // Floors
+            else if (element is Floor floor)
+            {
+                data["FloorData"] = new Dictionary<string, object>
+                {
+                    { "Area", floor.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED)?.AsDouble() ?? 0 },
+                    { "Thickness", floor.get_Parameter(BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM)?.AsDouble() ?? 0 },
+                    { "IsStructural", floor.get_Parameter(BuiltInParameter.FLOOR_PARAM_IS_STRUCTURAL)?.AsInteger() == 1 }
+                };
+            }
+
+            // You can add more element-specific data for other types as needed
         }
     }
 }
