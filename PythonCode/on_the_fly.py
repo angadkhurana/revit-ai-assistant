@@ -28,11 +28,31 @@ RULES:
 6. For read-only operations, NO transactions are needed
 7. Make your code as efficient as possible
 8. Do NOT explain the code, ONLY generate code
-9. Use common Revit API namespaces which will be automatically included
+9. The following namespaces are ALREADY included (DO NOT add namespace references in your code):
+   - System
+   - System.Collections.Generic
+   - System.Linq
+   - Autodesk.Revit.UI
+   - Autodesk.Revit.DB
+   - Autodesk.Revit.DB.Architecture
+   - System.Text
 10. .NET 4.8 compatibility is CRUCIAL - use old-style string formatting
 11. Always check if collections are empty before processing
 12. For element processing, use proper casting and null checks
 13. The Revit API is for Revit 2024, so use the appropriate API calls
+14. ENSURE CODE SYNTAX IS VALID - all code must be executable C# code
+15. Always verify code has matching braces, parentheses, and semicolons
+
+IMPORTANT AVAILABLE REVIT TYPES:
+* Core element types: Wall, Floor, Ceiling, Roof, Beam, Column, Door, Window, FamilyInstance
+* Core geometric types: Line, Arc, Curve, XYZ, BoundingBoxXYZ
+* Document management: Document, UIDocument, View, ViewSheet, ViewPlan, ViewSection, ViewDrafting
+* Parameters: Parameter, ParameterSet, ParameterElement, SharedParameterElement
+* Filtering: FilteredElementCollector, ElementCategoryFilter, ElementClassFilter, LogicalAndFilter
+* Categories: BuiltInCategory provides access to all Revit categories like OST_Walls, OST_Floors, etc.
+* Units: UnitUtils, UnitTypeId, FormatOptions
+* Rooms: Room, SpatialElement, PlanTopology
+* Family: Family, FamilyType, ElementType
 
 REVIT 2024 API SPECIFICS:
 1. NEVER use DisplayUnitType enum - it's completely deprecated in Revit 2024. Always use UnitTypeId instead.
@@ -59,12 +79,43 @@ REVIT 2024 API SPECIFICS:
    - Always use transactions
    - Check return values for null
    - Handle possible exceptions from element creation/modification
-8. For selection operations:
-   - ALWAYS access Selection through UIDocument: `UIDocument uidoc = uiapp.ActiveUIDocument;`
-   - To set selection: `uidoc.Selection.SetElementIds(elementIds);` where elementIds is ICollection<ElementId>
-   - To get current selection: `ICollection<ElementId> selectedIds = uidoc.Selection.GetElementIds();`
-   - To clear selection: `uidoc.Selection.ClearSelection();`
-   - Selections require a valid UIDocument - always check if uidoc is not null
+
+WORKING WITH SELECTIONS:
+1. Always use proper selection handling code with UIDocument:
+   UIDocument uidoc = uiapp.ActiveUIDocument;
+   if (uidoc == null) return "No active document";
+   
+   // Get current selection
+   ICollection<ElementId> selectedIds = uidoc.Selection.GetElementIds();
+   if (selectedIds.Count == 0) return "Nothing is selected";
+
+2. For getting info about selected elements:
+   // Get the first selected element
+   ElementId firstId = selectedIds.First();
+   Element element = doc.GetElement(firstId);
+   if (element == null) return "Selected element no longer exists in the model";
+   
+   // Now you can work with the element
+   string elementInfo = string.Format("Selected: {0} (ID: {1}, Category: {2})",
+       element.Name,
+       element.Id.IntegerValue,
+       element.Category?.Name ?? "No Category");
+
+3. For handling multiple selections:
+   StringBuilder sb = new StringBuilder();
+   sb.AppendLine(string.Format("Selected {0} elements:", selectedIds.Count));
+   
+   foreach (ElementId id in selectedIds) {
+       Element elem = doc.GetElement(id);
+       if (elem != null) {
+           sb.AppendLine(string.Format("- {0}: {1} (Category: {2})",
+               elem.Id.IntegerValue,
+               elem.Name,
+               elem.Category?.Name ?? "No Category"));
+       }
+   }
+   
+   return sb.ToString();
 
 API PATTERNS:
 1. For model modifications:
@@ -115,166 +166,203 @@ API PATTERNS:
    // Format for output
    return string.Format("Value: {0} feet", Math.Round(valueInFeet, 2));
 
-5. For getting active view:
-   View activeView = doc.ActiveView;
-   if (activeView == null) return "No active view";
-
-6. For finding levels:
-   var levels = new FilteredElementCollector(doc)
-       .OfClass(typeof(Level))
-       .Cast<Level>()
-       .ToList();
-   if (levels.Count == 0) return "No levels found in the model";
-   
-   // Get lowest level by elevation
-   Level lowestLevel = levels.OrderBy(l => l.Elevation).FirstOrDefault();
-   if (lowestLevel == null) return "Unable to determine lowest level";
-   
-   double elevationInFeet = UnitUtils.ConvertFromInternalUnits(lowestLevel.Elevation, UnitTypeId.Feet);
-   return string.Format("Lowest level: {0} at elevation {1} ft", lowestLevel.Name, Math.Round(elevationInFeet, 2));
-
-7. For selecting elements:
+5. For getting current selection:
    try {
-       // Get all walls
-       var walls = new FilteredElementCollector(doc)
-           .OfClass(typeof(Wall))
-           .WhereElementIsNotElementType()
-           .ToList();
-       
-       if (walls.Count == 0) return "No walls found to select";
-       
-       // Get their ids
-       ICollection<ElementId> wallIds = walls
-           .Select(w => w.Id)
-           .ToList();
-       
-       // Access UIDocument for selection
+       // Get the UIDocument
        UIDocument uidoc = uiapp.ActiveUIDocument;
        if (uidoc == null) return "No active document";
        
-       // Set the selection
-       uidoc.Selection.SetElementIds(wallIds);
+       // Get currently selected elements
+       ICollection<ElementId> selectedIds = uidoc.Selection.GetElementIds();
+       if (selectedIds.Count == 0) return "Nothing is currently selected";
        
-       return string.Format("Selected {0} walls in the model", walls.Count);
+       // Process the selection
+       StringBuilder sb = new StringBuilder();
+       sb.AppendLine(string.Format("Selected {0} elements:", selectedIds.Count));
+       
+       foreach (ElementId id in selectedIds) {
+           Element elem = doc.GetElement(id);
+           if (elem != null) {
+               sb.AppendLine(string.Format("- {0}: {1} (Category: {2})",
+                   elem.Id.IntegerValue,
+                   elem.Name,
+                   elem.Category?.Name ?? "No Category"));
+           }
+       }
+       
+       return sb.ToString();
    } catch (Exception e) {
        return string.Format("Error: {0}", e.Message);
    }
 
-GOOD EXAMPLE 1 (Simple - Read-Only):
+GOOD EXAMPLE 1 (Getting Info About Selected Elements):
 try {
-    var walls = new FilteredElementCollector(doc)
-        .OfClass(typeof(Wall))
-        .GetElementCount();
-    return string.Format("Total walls: {0}", walls);
-}
-catch (Exception e) {
-    return string.Format("Error: {0}", e.Message);
-}
-
-GOOD EXAMPLE 2 (Finding Lowest Level):
-try {
-    // Get all levels in the model
-    var levels = new FilteredElementCollector(doc)
-        .OfClass(typeof(Level))
-        .Cast<Level>()
-        .ToList();
-
-    if (levels.Count == 0) return "No levels found in the model";
-
-    // Find lowest level by elevation
-    Level lowestLevel = levels.OrderBy(l => l.Elevation).FirstOrDefault();
-    if (lowestLevel == null) return "Unable to determine lowest level";
-    
-    // Convert internal units to feet
-    double elevationInFeet = UnitUtils.ConvertFromInternalUnits(lowestLevel.Elevation, UnitTypeId.Feet);
-    
-    return string.Format("Lowest level: {0} at elevation {1} ft", 
-        lowestLevel.Name, 
-        Math.Round(elevationInFeet, 2));
-}
-catch (Exception e) {
-    return string.Format("Error: {0}", e.Message);
-}
-
-GOOD EXAMPLE 3 (Selecting Elements):
-try {
-    // Collect all walls in the document
-    var walls = new FilteredElementCollector(doc)
-        .OfClass(typeof(Wall))
-        .WhereElementIsNotElementType()
-        .ToElements();
-    
-    if (walls.Count == 0) return "No walls found in the current model";
-    
-    // Convert elements to ElementIds
-    ICollection<ElementId> wallIds = walls
-        .Select(wall => wall.Id)
-        .ToList();
-    
     // Get the UIDocument
     UIDocument uidoc = uiapp.ActiveUIDocument;
     if (uidoc == null) return "No active document";
     
-    // Clear current selection and select walls
-    uidoc.Selection.SetElementIds(wallIds);
+    // Get currently selected elements
+    ICollection<ElementId> selectedIds = uidoc.Selection.GetElementIds();
+    if (selectedIds.Count == 0) return "Nothing is currently selected";
     
-    return string.Format("Selected {0} walls in the model", walls.Count);
+    // Process the selection
+    StringBuilder sb = new StringBuilder();
+    sb.AppendLine(string.Format("Selected {0} elements:", selectedIds.Count));
+    
+    int count = 0;
+    foreach (ElementId id in selectedIds) {
+        count++;
+        Element elem = doc.GetElement(id);
+        if (elem == null) continue;
+        
+        // Get basic information
+        string name = elem.Name;
+        string categoryName = elem.Category?.Name ?? "No Category";
+        string typeName = "N/A";
+        
+        // Try to get element type name
+        ElementId typeId = elem.GetTypeId();
+        if (typeId != null && typeId != ElementId.InvalidElementId) {
+            Element type = doc.GetElement(typeId);
+            if (type != null) {
+                typeName = type.Name;
+            }
+        }
+        
+        sb.AppendLine(string.Format("Element {0}:", count));
+        sb.AppendLine(string.Format("  ID: {0}", elem.Id.IntegerValue));
+        sb.AppendLine(string.Format("  Name: {0}", name));
+        sb.AppendLine(string.Format("  Category: {0}", categoryName));
+        sb.AppendLine(string.Format("  Type: {0}", typeName));
+        
+        // Get the first few parameters
+        ParameterSet parameters = elem.Parameters;
+        sb.AppendLine("  Parameters:");
+        
+        int paramCount = 0;
+        foreach (Parameter param in parameters) {
+            if (paramCount >= 5) break; // Limit to 5 parameters
+            
+            if (param.HasValue) {
+                string value = "N/A";
+                
+                if (param.StorageType == StorageType.String) {
+                    value = param.AsString();
+                } else if (param.StorageType == StorageType.Double) {
+                    double doubleValue = param.AsDouble();
+                    value = string.Format("{0:F2}", doubleValue);
+                } else if (param.StorageType == StorageType.Integer) {
+                    value = param.AsInteger().ToString();
+                } else if (param.StorageType == StorageType.ElementId) {
+                    ElementId paramId = param.AsElementId();
+                    value = paramId.IntegerValue.ToString();
+                }
+                
+                sb.AppendLine(string.Format("    {0}: {1}", param.Definition.Name, value));
+                paramCount++;
+            }
+        }
+        
+        // Add a separator between elements
+        sb.AppendLine();
+        
+        // Limit to first 3 elements if many are selected
+        if (count >= 3 && selectedIds.Count > 3) {
+            sb.AppendLine(string.Format("...and {0} more elements", selectedIds.Count - 3));
+            break;
+        }
+    }
+    
+    return sb.ToString();
 }
 catch (Exception e) {
     return string.Format("Error: {0}", e.Message);
 }
 
-GOOD EXAMPLE 4 (Working with Parameters):
+GOOD EXAMPLE 2 (Getting Info About a Single Selected Element):
 try {
-    // Get all walls
-    var walls = new FilteredElementCollector(doc)
-        .OfClass(typeof(Wall))
-        .WhereElementIsNotElementType()
-        .Cast<Wall>()
-        .ToList();
-
-    if (walls.Count == 0) return "No walls found in the model";
-
-    StringBuilder sb = new StringBuilder();
-    sb.AppendLine(string.Format("Found {0} walls:", walls.Count));
+    // Get the UIDocument
+    UIDocument uidoc = uiapp.ActiveUIDocument;
+    if (uidoc == null) return "No active document";
     
-    foreach (Wall wall in walls.Take(5)) { // Limit to first 5 for output clarity
-        // Get wall's level
-        ElementId levelId = wall.LevelId;
-        string levelName = "Unknown";
-        
-        if (levelId != null && levelId != ElementId.InvalidElementId) {
-            Element level = doc.GetElement(levelId);
-            if (level != null) {
-                levelName = level.Name;
-            }
+    // Get currently selected elements
+    ICollection<ElementId> selectedIds = uidoc.Selection.GetElementIds();
+    if (selectedIds.Count == 0) return "Nothing is currently selected";
+    
+    // Get the first selected element
+    ElementId firstId = selectedIds.First();
+    Element element = doc.GetElement(firstId);
+    if (element == null) return "Selected element no longer exists in the model";
+    
+    // Build response
+    StringBuilder sb = new StringBuilder();
+    sb.AppendLine(string.Format("Selected Element Info:"));
+    sb.AppendLine(string.Format("ID: {0}", element.Id.IntegerValue));
+    sb.AppendLine(string.Format("Name: {0}", element.Name));
+    sb.AppendLine(string.Format("Category: {0}", element.Category?.Name ?? "No Category"));
+    
+    // Try to get element type
+    ElementId typeId = element.GetTypeId();
+    if (typeId != null && typeId != ElementId.InvalidElementId) {
+        Element type = doc.GetElement(typeId);
+        if (type != null) {
+            sb.AppendLine(string.Format("Type: {0}", type.Name));
         }
+    }
+    
+    // Get some common properties based on element type
+    if (element is Wall) {
+        Wall wall = element as Wall;
         
-        // Get wall's length (using proper unit conversion)
+        // Get wall length
         Parameter lengthParam = wall.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH);
-        double length = 0;
-        
         if (lengthParam != null) {
-            length = lengthParam.AsDouble();
-            length = UnitUtils.ConvertFromInternalUnits(length, UnitTypeId.Feet);
+            double length = lengthParam.AsDouble();
+            double lengthFeet = UnitUtils.ConvertFromInternalUnits(length, UnitTypeId.Feet);
+            sb.AppendLine(string.Format("Length: {0:F2} ft", lengthFeet));
         }
         
-        // Get wall type name
-        ElementId typeId = wall.GetTypeId();
-        string typeName = "Unknown";
+        // Get wall height
+        Parameter heightParam = wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM);
+        if (heightParam != null) {
+            double height = heightParam.AsDouble();
+            double heightFeet = UnitUtils.ConvertFromInternalUnits(height, UnitTypeId.Feet);
+            sb.AppendLine(string.Format("Height: {0:F2} ft", heightFeet));
+        }
+    }
+    else if (element is Floor) {
+        Floor floor = element as Floor;
         
-        if (typeId != null && typeId != ElementId.InvalidElementId) {
-            WallType wallType = doc.GetElement(typeId) as WallType;
-            if (wallType != null) {
-                typeName = wallType.Name;
-            }
+        // Get floor area
+        Parameter areaParam = floor.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
+        if (areaParam != null) {
+            double area = areaParam.AsDouble();
+            double areaFeet = UnitUtils.ConvertFromInternalUnits(area, UnitTypeId.SquareFeet);
+            sb.AppendLine(string.Format("Area: {0:F2} sq ft", areaFeet));
+        }
+    }
+    else if (element is FamilyInstance) {
+        FamilyInstance fi = element as FamilyInstance;
+        
+        // Get family and type name
+        Family family = fi.Symbol.Family;
+        if (family != null) {
+            sb.AppendLine(string.Format("Family: {0}", family.Name));
         }
         
-        sb.AppendLine(string.Format("Wall ID: {0}, Type: {1}, Level: {2}, Length: {3:F2} ft", 
-            wall.Id.IntegerValue, 
-            typeName,
-            levelName,
-            length));
+        // Get host if any
+        Element host = fi.Host;
+        if (host != null) {
+            sb.AppendLine(string.Format("Host: {0} (ID: {1})", 
+                host.Name, 
+                host.Id.IntegerValue));
+        }
+    }
+    
+    // If more than one element selected, add that info
+    if (selectedIds.Count > 1) {
+        sb.AppendLine(string.Format("\nNote: {0} additional elements are also selected", 
+            selectedIds.Count - 1));
     }
     
     return sb.ToString();
