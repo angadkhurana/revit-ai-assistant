@@ -668,6 +668,56 @@ namespace RevitGpt.Functions
                 });
             }
         }
-    }
 
+        /// <summary>
+        /// Delete elements by their IDs
+        /// </summary>
+        public static string DeleteElements(UIApplication uiapp, dynamic arguments)
+        {
+            Document doc = uiapp.ActiveUIDocument.Document;
+            List<int> elementIds = JsonConvert.DeserializeObject<List<int>>(arguments.element_ids.ToString());
+            
+            int successCount = 0;
+            List<int> failedIds = new List<int>();
+            
+            using (Transaction trans = new Transaction(doc, "Delete Elements"))
+            {
+                trans.Start();
+                
+                try
+                {
+                    foreach (int id in elementIds)
+                    {
+                        ElementId elementId = new ElementId(id);
+                        if (doc.GetElement(elementId) != null)
+                        {
+                            doc.Delete(elementId);
+                            successCount++;
+                        }
+                        else
+                        {
+                            failedIds.Add(id);
+                        }
+                    }
+                    
+                    trans.Commit();
+                }
+                catch (Exception ex)
+                {
+                    trans.RollBack();
+                    return JsonConvert.SerializeObject(new
+                    {
+                        Message = $"Error deleting elements: {ex.Message}",
+                        ElementIds = new List<int>()
+                    });
+                }
+            }
+            
+            return JsonConvert.SerializeObject(new
+            {
+                Message = $"Successfully deleted {successCount} elements. {failedIds.Count} elements not found.",
+                ElementIds = elementIds.Except(failedIds).ToList()
+            });
+        }
+    }
 }

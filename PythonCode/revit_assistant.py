@@ -12,7 +12,8 @@ load_dotenv()
 
 # Update the tools list to include the new tool
 tools = [create_wall, add_window_to_wall, get_windows_on_wall, get_wall_types, 
-         change_wall_type, get_selected_elements, get_elements_by_type, get_level_names]
+         change_wall_type, get_selected_elements, get_elements_by_type, get_level_names,
+         delete_elements]
 
 # Update the TOOL_TO_FUNCTIONS_DICT to include the new tool
 TOOL_TO_FUNCTIONS_DICT = {
@@ -23,7 +24,8 @@ TOOL_TO_FUNCTIONS_DICT = {
     "change_wall_type": change_wall_type,
     "get_selected_elements": get_selected_elements,
     "get_elements_by_type": get_elements_by_type,
-    "get_level_names": get_level_names
+    "get_level_names": get_level_names,
+    "delete_elements": delete_elements
 }
 
 # Set up the LLM with the provided API key

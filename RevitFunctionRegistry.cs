@@ -31,7 +31,8 @@ namespace RevitGpt
                 
                 // Element functions
                 { "get_elements_by_type", CommonFunctions.GetElementsByType },
-                { "get_level_names", CommonFunctions.GetLevelNames }
+                { "get_level_names", CommonFunctions.GetLevelNames },
+                { "delete_elements", CommonFunctions.DeleteElements }
                 
                 // Add more function mappings here as needed
             };

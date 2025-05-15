@@ -77,3 +77,24 @@ def get_level_names() -> str:
         return f"{message}\nLevel names: {', '.join(levels)}"
     else:
         return response.get("Message", "Failed to retrieve levels")
+
+class DeleteElementsArgs(BaseModel):
+    """Arguments for deleting elements"""
+    element_ids: list[int] = Field(..., description="List of element IDs to delete from the Revit model")
+
+@tool(args_schema=DeleteElementsArgs)
+def delete_elements(element_ids: list[int]) -> str:
+    """
+    Delete multiple elements from the Revit model by their element IDs.
+    
+    Args:
+        element_ids: A list of element IDs to delete
+        
+    Returns:
+        A message indicating the results of the deletion operation
+    """
+    # Send to Revit server and get response
+    response = send_to_revit_server("delete_elements", {"element_ids": element_ids})
+    
+    # Return the message
+    return response.get("Message", "No message returned")
