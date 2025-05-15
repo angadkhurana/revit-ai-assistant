@@ -4,12 +4,14 @@ import requests
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
+from langchain_deepseek import ChatDeepSeek
 
 load_dotenv()
 
 # Set up the LLM
 # model = ChatOpenAI(model="gpt-4o", temperature=0)
 model = ChatAnthropic(model='claude-3-7-sonnet-latest')
+# model = ChatDeepSeek(model="deepseek-chat", temperature=0)
 
 def generate_csharp_code(user_query):
     """Generate C# code for Revit API based on user query"""
@@ -53,6 +55,7 @@ IMPORTANT AVAILABLE REVIT TYPES:
 * Units: UnitUtils, UnitTypeId, FormatOptions
 * Rooms: Room, SpatialElement, PlanTopology
 * Family: Family, FamilyType, ElementType
+* Graphics: OverrideGraphicSettings, Color, FillPatternElement, LinePatternElement, CategorySet, ViewDisplayStyle
 
 REVIT 2024 API SPECIFICS:
 1. NEVER use DisplayUnitType enum - it's completely deprecated in Revit 2024. Always use UnitTypeId instead.
@@ -79,6 +82,58 @@ REVIT 2024 API SPECIFICS:
    - Always use transactions
    - Check return values for null
    - Handle possible exceptions from element creation/modification
+
+GRAPHICS AND OVERRIDES IN REVIT:
+1. For element graphic overrides, ALWAYS use View.SetElementOverrides() rather than trying to modify parameters directly:
+   // Create graphic override settings
+   OverrideGraphicSettings ogs = new OverrideGraphicSettings();
+   
+   // Set cut fill pattern color (NOT SetCutFillColor!)
+   ogs.SetCutForegroundPatternColor(new Color(0, 255, 0)); // RGB Green
+   
+   // Apply to elements
+   view.SetElementOverrides(elementId, ogs);
+   // OR for categories (only takes 2 arguments in Revit 2024)
+   view.SetCategoryOverrides(categoryId, ogs);
+
+2. For RGB color creation:
+   Color color = new Color(r, g, b); // r,g,b values from 0-255
+   
+3. NEVER try to set a Color directly to a parameter. Colors must be applied through overrides.
+   
+4. For category-wide overrides in current view:
+   Category category = Category.GetCategory(doc, BuiltInCategory.OST_Walls);
+   OverrideGraphicSettings ogs = new OverrideGraphicSettings();
+   ogs.SetCutForegroundPatternColor(new Color(0, 255, 0));
+   doc.ActiveView.SetCategoryOverrides(category.Id, ogs);
+   
+5. For material color changes, use proper Revit API methods:
+   // Get the material
+   Material material = doc.GetElement(materialId) as Material;
+   if (material != null) {
+       // For Revit 2024, use appropriate properties
+       material.Color = new Color(r, g, b);
+   }
+
+6. For all graphics and view changes, transactions are ALWAYS required.
+
+PARAMETER SETTING GUIDELINES:
+1. Color parameters:
+   - Use OverrideGraphicSettings for view-specific colors
+   - Use Material.Color for material colors
+   - NEVER try to set Color objects directly to parameters
+
+2. ElementId parameters:
+   - Use parameter.Set(elementId) where elementId is an ElementId
+   - Check that elementId is not ElementId.InvalidElementId
+
+3. String parameters:
+   - Use parameter.Set(string) for text values
+   - Ensure string is not null or empty
+
+4. Numeric parameters:
+   - Use parameter.Set(double/int) for numeric values
+   - For length, area, etc., remember values are in internal units
 
 WORKING WITH SELECTIONS:
 1. Always use proper selection handling code with UIDocument:
@@ -194,6 +249,28 @@ API PATTERNS:
    } catch (Exception e) {
        return string.Format("Error: {0}", e.Message);
    }
+
+COMMON ERRORS AND SOLUTIONS:
+1. Parameter setting errors:
+   - Never try to set a Color object directly to a parameter
+   - For color parameters, use proper override methods
+   - INCORRECT: parameter.Set(color) 
+   - CORRECT: ogs.SetCutForegroundPatternColor(color) with view.SetCategoryOverrides(categoryId, ogs)
+
+2. Visibility and graphics:
+   - Always use OverrideGraphicSettings for appearance changes
+   - Modify the active view unless explicitly requested otherwise
+   - Use SetCutForegroundPatternColor() for section cut colors (NOT SetCutFillColor)
+   - SetCategoryOverrides() takes only 2 arguments in Revit 2024 (categoryId and ogs)
+
+3. Collection handling:
+   - Always check if collections are empty before processing
+   - Use .Any() to verify collections contain elements
+   - Example: if (!collector.Any()) return "No elements found";
+
+4. Transaction management:
+   - All view appearance changes require transactions
+   - Graphics overrides must be inside transactions
 
 GOOD EXAMPLE 1 (Getting Info About Selected Elements):
 try {
@@ -315,7 +392,7 @@ try {
         Wall wall = element as Wall;
         
         // Get wall length
-        Parameter lengthParam = wall.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH);
+        Parameter lengthParam = wall.GetParameter(BuiltInParameter.CURVE_ELEM_LENGTH);
         if (lengthParam != null) {
             double length = lengthParam.AsDouble();
             double lengthFeet = UnitUtils.ConvertFromInternalUnits(length, UnitTypeId.Feet);
@@ -323,7 +400,7 @@ try {
         }
         
         // Get wall height
-        Parameter heightParam = wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM);
+        Parameter heightParam = wall.GetParameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM);
         if (heightParam != null) {
             double height = heightParam.AsDouble();
             double heightFeet = UnitUtils.ConvertFromInternalUnits(height, UnitTypeId.Feet);
@@ -334,7 +411,7 @@ try {
         Floor floor = element as Floor;
         
         // Get floor area
-        Parameter areaParam = floor.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
+        Parameter areaParam = floor.GetParameter(BuiltInParameter.HOST_AREA_COMPUTED);
         if (areaParam != null) {
             double area = areaParam.AsDouble();
             double areaFeet = UnitUtils.ConvertFromInternalUnits(area, UnitTypeId.SquareFeet);
@@ -368,6 +445,65 @@ try {
     return sb.ToString();
 }
 catch (Exception e) {
+    return string.Format("Error: {0}", e.Message);
+}
+
+GOOD EXAMPLE 3 (Setting Graphic Overrides):
+try {
+    // Get the active view
+    View view = doc.ActiveView;
+    if (view == null) return "No active view";
+    
+    // Start a transaction
+    using (Transaction tx = new Transaction(doc, "Set Wall Cut Color")) {
+        tx.Start();
+        
+        // Get wall category
+        Category wallCategory = Category.GetCategory(doc, BuiltInCategory.OST_Walls);
+        if (wallCategory == null) return "Wall category not found";
+        
+        // Create green color
+        Color greenColor = new Color(0, 255, 0); // RGB Green
+        
+        // Create graphic overrides
+        OverrideGraphicSettings ogs = new OverrideGraphicSettings();
+        ogs.SetCutForegroundPatternColor(greenColor);
+        
+        // Apply to wall category in current view (only 2 arguments in Revit 2024)
+        view.SetCategoryOverrides(wallCategory.Id, ogs);
+        
+        tx.Commit();
+    }
+    
+    return "Successfully changed wall section cut color to green in the active view";
+} catch (Exception e) {
+    return string.Format("Error: {0}", e.Message);
+}
+
+GOOD EXAMPLE 4 (Better Error Handling):
+try {
+    // Your code here
+    // This is just a template showing good error handling structure
+    UIDocument uidoc = uiapp.ActiveUIDocument;
+    if (uidoc == null) return "No active document";
+    
+    Document doc = uidoc.Document;
+    View activeView = doc.ActiveView;
+    
+    using (Transaction tx = new Transaction(doc, "Operation Description")) {
+        tx.Start();
+        // Do work here
+        tx.Commit();
+    }
+    
+    return "Operation completed successfully";
+} catch (ArgumentException ae) {
+    // Argument exceptions usually indicate incorrect parameter types
+    return string.Format("Parameter error: {0}. Check parameter types and values.", ae.Message);
+} catch (InvalidOperationException ioe) {
+    // Invalid operation usually indicates API misuse
+    return string.Format("Invalid operation: {0}. Check API usage.", ioe.Message);
+} catch (Exception e) {
     return string.Format("Error: {0}", e.Message);
 }
 
