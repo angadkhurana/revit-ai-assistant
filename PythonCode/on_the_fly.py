@@ -4,7 +4,6 @@ import requests
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
-from langchain_deepseek import ChatDeepSeek
 
 load_dotenv()
 
@@ -22,8 +21,19 @@ The code will be executed directly in Revit via a dynamic code execution system.
 
 RULES:
 1. Generate ONLY the method body code, not a complete class or namespace
-2. Your code will be executed inside a method with this signature: 
-   `public static string Execute(UIApplication uiapp, Document doc)`
+2. Your code will be inserted into a template with this structure:
+   ```csharp
+   namespace RevitGpt
+   {
+       public static class DynamicCode
+       {
+           public static string Execute(UIApplication uiapp, Document doc)
+           {
+               // YOUR CODE WILL BE INSERTED HERE
+           }
+       }
+   }
+```
 3. CRITICAL: NEVER redeclare the 'doc' parameter inside your code - it's already provided as a parameter
 4. Always return a string result - this is what will be shown to the user
 5. Handle errors gracefully with try/catch blocks
