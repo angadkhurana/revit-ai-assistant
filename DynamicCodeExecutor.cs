@@ -26,7 +26,23 @@ namespace RevitGpt
                     StringBuilder errorBuilder = new StringBuilder("Compilation errors:");
                     foreach (CompilerError error in results.Errors)
                     {
-                        errorBuilder.AppendLine($"Line {error.Line}: {error.ErrorText}");
+                        // Extract the line number relative to the user's code
+                        int actualLineNumber = error.Line - 14; // Adjust based on your template
+                        if (actualLineNumber > 0)
+                        {
+                            errorBuilder.AppendLine($"Line {actualLineNumber}: {error.ErrorText}");
+                            
+                            // Add the problematic line of code for context
+                            string[] codeLines = codeBody.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (actualLineNumber <= codeLines.Length)
+                            {
+                                errorBuilder.AppendLine($"Code: {codeLines[actualLineNumber - 1].Trim()}");
+                            }
+                        }
+                        else
+                        {
+                            errorBuilder.AppendLine($"Template error: {error.ErrorText}");
+                        }
                     }
                     return errorBuilder.ToString();
                 }
@@ -37,15 +53,24 @@ namespace RevitGpt
 
                 var methodInfo = type.GetMethod("Execute");
 
-                // Execute the method passing UIApplication and active document
-                return (string)methodInfo.Invoke(
-                    null,
-                    new object[] { uiapp, uiapp.ActiveUIDocument.Document }
-                );
+                try
+                {
+                    // Execute the method passing UIApplication and active document
+                    return (string)methodInfo.Invoke(
+                        null,
+                        new object[] { uiapp, uiapp.ActiveUIDocument.Document }
+                    );
+                }
+                catch (TargetInvocationException tie)
+                {
+                    // Unwrap the inner exception to get the actual error
+                    Exception innerException = tie.InnerException;
+                    return $"Runtime error: {innerException.Message}\nStack trace: {innerException.StackTrace.Split('\n')[0]}";
+                }
             }
             catch (Exception ex)
             {
-                return $"Error executing code: {ex.Message}";
+                return $"Error executing code: {ex.Message}\nStack trace: {ex.StackTrace.Split('\n')[0]}";
             }
         }
 
@@ -58,6 +83,8 @@ using System.Linq;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
+using System.Text;
+
 
 namespace RevitGpt
 {
